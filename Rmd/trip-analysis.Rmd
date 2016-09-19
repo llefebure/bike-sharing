@@ -1,0 +1,48 @@
+---
+title: "Trip Analysis"
+author: "Luke Lefebure"
+date: "September 18, 2016"
+output: html_document
+---
+
+```{r echo=FALSE, eval=FALSE}
+setwd("~/Documents/Projects/BikeShare/Rmd")
+```
+
+```{r}
+library(dplyr)
+library(readr)
+library(ggplot2)
+source("../misc/helpers.R")
+```
+
+```{r}
+file_paths <- getFilePaths()
+```
+
+Read in trip data:
+```{r}
+trip_data <- lapply(file_paths$trip, read_csv)
+colnames(trip_data[[1]])[10] <- "Subscriber Type" # make colnames consistent
+trip_data <- do.call("rbind", trip_data)
+```
+
+Add date features:
+```{r}
+trip_data <- trip_data %>% 
+  mutate(time = as.POSIXct(`Start Date`, format = "%m/%d/%Y %H:%M"),
+         month = format(time, "%m"),
+         day = format(time, "%a"),
+         hour = format(time, "%H"))
+```
+
+Most common trips and their average duration:
+```{r}
+common_routes <- trip_data %>%
+  group_by(`Start Station`, `End Station`, hour) %>%
+  summarize(trip_count = n(), trip_duration = mean(Duration), 
+            sd_trip_duration = sd(Duration)) %>%
+  ungroup() %>%
+  arrange(desc(trip_count))
+```
+
