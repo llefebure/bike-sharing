@@ -11,9 +11,9 @@ Bike sharing systems are not without flaws. The most obvious problem is that wit
 
 ## The Task
 
-In this analysis, I will model the arrivals and departures to each dock of the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system to make probabilistic conclusions about the future availability of bikes. More precisely, I will predict the distribution of bike availablity at each station one hour in the future.
+In this analysis, I will model the arrivals and departures to each dock of the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system to make probabilistic conclusions about the future availability of bikes. More precisely, I will build a model to predict the distribution of bike availablity at each station one hour in the future.
 
-This is important for two reasons. It is valuable to users who want to know if a bike will be available at their pickup station, and the rebalancers want to know which stations they should focus their efforts on.
+This is important for two reasons. It is valuable to users who want to know if a bike will be available at their pickup station, and rebalancers need to know which stations they should focus their efforts on.
 
 ```{r echo=FALSE, eval=FALSE}
 setwd("~/Documents/Projects/BikeShare/Rmd")
@@ -34,6 +34,9 @@ I will use data on the Bay Area Bike Share program publically available [here](h
 ```{r eval=FALSE}
 file_paths <- getFilePaths()
 status_data <- read_csv(file_paths$status[3])
+```
+
+```{r}
 status_data <- status_data %>%
   mutate(month = format(time, "%m"), 
          day = format(time, "%a"),
@@ -59,14 +62,14 @@ ggplot(empty, aes(x=day)) +
 When are stations full?
 
 ```{r}
-full <- filter(status_data, bikes_available == 0)
-ggplot(empty, aes(x=as.numeric(hour))) + 
+full <- filter(status_data, docks_available == 0)
+ggplot(full, aes(x=as.numeric(hour))) + 
   geom_histogram(binwidth = 1) + 
-  labs(x = "Hour", y = "# of Minutes Empty", title = "Empty Docks by Hour")
-ggplot(empty, aes(x=day)) +
+  labs(x = "Hour", y = "# of Minutes Full", title = "Full Docks by Hour")
+ggplot(full, aes(x=day)) +
   geom_bar() + 
   scale_x_discrete(limits = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) +
-  labs(x = "Day of the Week", y = "# of Minutes Empty", title = "Empty Docks by Day of the Week")
+  labs(x = "Day of the Week", y = "# of Minutes Empty", title = "Full Docks by Day of the Week")
 ```
 
 
