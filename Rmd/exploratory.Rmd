@@ -33,6 +33,8 @@ library(h2o)
 source("../R/helpers.R")
 ```
 
+## Station Availability
+
 ```{r eval=FALSE}
 file_paths <- getFilePaths()
 status_data <- read_csv(file_paths$status[3])
@@ -91,3 +93,7 @@ train
 ## Initial Model Building
 
 I will use Poisson regression. I have been wanting to use the h2o package after a presentation by Erin LeDell in one of my classes at Stanford. H2O provides distributed implementations of popular machine learning algorithms, and while I won't use the distributed capability of the package in this project, this will be good practice to potentially do so in a future project.
+
+```{r}
+local.h2o <- h2o.init()
+```
