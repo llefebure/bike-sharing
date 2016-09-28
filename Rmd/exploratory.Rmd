@@ -85,6 +85,7 @@ ggplot(filter(agg, station_id == 77), aes(x = hm, y = avg_bikes_available,
 
 ```{r}
 train <- getTrainingSet()
+train
 ```
 
 ## Initial Model Building
