@@ -21,15 +21,17 @@ setwd("~/Documents/Projects/BikeShare/Rmd")
 
 ## Data
 
+I will use data on the Bay Area Bike Share program publically available [here](http://www.bayareabikeshare.com/open-data).
+
 ```{r}
 library(dplyr)
 library(readr)
+library(stringr)
 library(ggplot2)
 library(scales)
-source("../misc/helpers.R")
+library(h2o)
+source("../R/helpers.R")
 ```
-
-I will use data on the Bay Area Bike Share program publically available [here](http://www.bayareabikeshare.com/open-data).
 
 ```{r eval=FALSE}
 file_paths <- getFilePaths()
@@ -72,10 +74,19 @@ ggplot(full, aes(x=day)) +
   labs(x = "Day of the Week", y = "# of Minutes Empty", title = "Full Docks by Day of the Week")
 ```
 
-
 ```{r}
 ggplot(filter(agg, station_id == 77), aes(x = hm, y = avg_bikes_available,
                                          group = weekday, color = weekday)) +
   geom_line() +
   scale_x_datetime(labels = date_format("%H:%M", tz = "America/Los_Angeles"))
 ```
+
+## Building the Training Set
+
+```{r}
+train <- getTrainingSet()
+```
+
+## Initial Model Building
+
+I will use Poisson regression. I have been wanting to use the h2o package after a presentation by Erin LeDell in one of my classes at Stanford. H2O provides distributed implementations of popular machine learning algorithms, and while I won't use the distributed capability of the package in this project, this will be good practice to potentially do so in a future project.
