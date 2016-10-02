@@ -22,6 +22,7 @@ library(dplyr)
 library(readr)
 library(stringr)
 library(knitr)
+library(skellam)
 library(ggplot2)
 source("../R/helpers.R")
 ```
@@ -56,13 +57,9 @@ To impose this model structure on the problem, I use Poisson regression. Poisson
 
 ### Features
 
-I use weekday and hour.
+I use weekday, hour, and their interaction as categorical predictors and mean temperature as a quantitative predictor.
 
 ### Fitting
-```{r}
-fitPoisson <- function(train, test) {
-}
-```
 
 ### Evaluation and Comparison
 
@@ -70,8 +67,34 @@ Here I will talk about evaluation metrics and comparison to other methods with r
 
 ### Combining Arrival and Departure Models to make Probabilistic Predictions
 
-The difference of two independent Poisson distributions follows the [Skellam distribution](http://en.wikipedia.org/wiki/Skellam_distribution). If we assume that the arrival and departure processes to a given station are independent (reasonable), then we can model the net change in bikes over the next hour at a given station with the Skellam distribution.
+The difference of two independent Poisson distributions follows the [Skellam distribution](http://en.wikipedia.org/wiki/Skellam_distribution). If we assume that the arrival and departure processes to a given station are independent, then the Poisson arrival and departure models allow us to predict an entire distribution for the net change rather than a single point. An example of how this can be done is below.
+
+```{r}
+train.st <- filter(train, station_id == 69)
+test.st <- filter(test, station_id == 69)
+```
+
+```{r}
+arr.fit <- glm(arrivals ~ weekday + hour + weekday:hour, data = train.st, family = "poisson")
+dep.fit <- glm(departures ~ weekday + hour + weekday:hour, data = train.st, family = "poisson")
+```
+
+After fitting the arrival and departure models, we can use them to make point predictions as before. These predictions act as parameters to the Skellam distribution, and this allows us to predict, for example, quartiles.
+
+```{r}
+test.st <- mutate(test.st, arr.param = predict(arr_fit, newdata = test.st, type = "response"),
+                  dep.param = predict(dep_fit, newdata = test.st, type = "response"),
+                  q.25 = qskellam(.25, arr.param, dep.param),
+                  q.50 = qskellam(.50, arr.param, dep.param),
+                  q.75 = qskellam(.75, arr.param, dep.param))
+```
+
+In the table below, we can see a slice from the test set and quartile predictions.
+
+```{r}
+kable(head(test.st %>% select(hour, weekday, q.25, q.50, q.75), 15))
+```
 
 ## Conclusion
 
-I think that Poisson regression can add some value to bike sharing networks.
+I think that Poisson regression has the potential to give some valuable insight into the workings of a bike sharing network.

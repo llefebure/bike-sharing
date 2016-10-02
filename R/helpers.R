@@ -19,6 +19,21 @@ getProcessedTripData <- function(){
   file_paths <- getFilePaths()
   trip_data <- rbind(read_csv(file_paths$trip[2]),
                      read_csv(file_paths$trip[3]))
+  weather_data <- rbind(read_csv(file_paths$weather[2]),
+                        read_csv(file_paths$weather[3]))
+  station_data <- rbind(read_csv(file_paths$station[2]),
+                        read_csv(file_paths$station[3])) %>%
+    select(station_id, landmark) %>%
+    group_by(station_id, landmark) %>%
+    filter(row_number() == 1) %>%
+    ungroup()
+  station_data$Zip <- sapply(station_data$landmark, function(l) {
+    if (l == "San Francisco") 94107
+    else if (l == "Redwood City") 94063
+    else if (l == "Palo Alto") 94301
+    else if (l == "Mountain View") 94041
+    else if (l == "San Jose") 95113
+  })
   
   # add derived date fields to the trip data
   trip_data <- trip_data %>% 
@@ -73,20 +88,32 @@ getProcessedTripData <- function(){
                          join_key = "")) %>%
     select(station_id, year, month, day, dow, hour, weekday)
   
-  # possibly add hourly weather data from forecast.io and station capacity and availability at the time
-  
   # join date grid with processed df
-  processed_final <- left_join(date_range, processed)
+  processed <- left_join(date_range, processed)
   
   # outer joins fill with NA's, so we need to convert these to 0's
-  processed_final[is.na(processed_final)] = 0
+  processed[is.na(processed)] = 0
   
   # add column for net change
-  processed_final <- mutate(processed_final, net = arrivals - departures)
+  processed <- mutate(processed, net = arrivals - departures)
+  
+  # add zips to join with weather data
+  processed <- inner_join(processed, station_data)
+  
+  # extract date from weather data
+  weather_data <- weather_data %>% 
+    mutate(time = as.POSIXct(PDT, format = "%m/%d/%Y"),
+           year = format(time, "%Y"),
+           month = format(time, "%m"),
+           day = format(time, "%d")) %>%
+    select(year, month, day, Zip, `Mean TemperatureF`)
+  
+  # append weather info
+  processed <- inner_join(processed, weather_data)
   
   # change to factors
-  processed_final$weekday <- factor(processed_final$weekday)
-  processed_final$hour <- factor(processed_final$hour)
+  processed$weekday <- factor(processed$weekday)
+  processed$hour <- factor(processed$hour)
   
-  return(processed_final)
+  return(processed)
 }
