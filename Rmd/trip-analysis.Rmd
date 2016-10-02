@@ -13,6 +13,7 @@ setwd("~/Documents/Projects/BikeShare/Rmd")
 library(dplyr)
 library(readr)
 library(ggplot2)
+library(scales)
 source("../misc/helpers.R")
 ```
 

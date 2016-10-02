@@ -11,7 +11,7 @@ Bike sharing systems are not without flaws. The most obvious problem is that wit
 
 ## The Task
 
-In this analysis, I will model the arrivals and departures to each dock of the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system to make probabilistic conclusions about the future availability of bikes. More precisely, I will build a model to predict the distribution of bike availablity at each station one hour in the future.
+In this analysis, I build separate models to predict the number of arrivals and departures to each station in the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system over the next hour and use these models to predict the distribution of future bike availability.
 
 This is important for two reasons. It is valuable to users who want to know if a bike will be available at their pickup station, and rebalancers need to know which stations they should focus their efforts on.
 
@@ -19,39 +19,54 @@ This is important for two reasons. It is valuable to users who want to know if a
 setwd("~/Documents/Projects/BikeShare/Rmd")
 ```
 
-## Data
-
-I will use data on the Bay Area Bike Share program publically available [here](http://www.bayareabikeshare.com/open-data) that consists of individual records for all 525,944 trips made between 3/1/2014 and 8/31/2015.
-
 ```{r}
 library(dplyr)
 library(readr)
 library(stringr)
 library(knitr)
 library(ggplot2)
-library(scales)
-library(h2o)
 source("../R/helpers.R")
 ```
 
-## Building the Training Set
+## Data
 
-I build the training set from individual trip records using `dplyr` by aggregating over every hour of every day. The definition of `getTrainingSet` can be found [here](http://github.com/llefebure).
+The Bay Area Bike Share program makes trip, station, and station availability data publically available [here](http://www.bayareabikeshare.com/open-data). The trip data consists of individual records for all 525,944 trips made between 3/1/2014 and 8/31/2015 complete with information like origin and destination, duration, and start time.
+
+### Building the Arrivals and Departures Data Set
+
+I use `dplyr` to aggregate over this trip data to build the data set for training and testing. This data munging problem has its own challenges, and the full code for the `getProcessedTripData` function can be found [here](http://github.com/llefebure/bike-sharing/blob/master/R/helpers.R).
+
+The full data set consists of eighteen months of trip data. I train my models on the first year of data and test on the remaining six months.
 
 ```{r}
 full <- getProcessedTripData()
-train <- full %>% filter(year == "2014" | (year == "2015" & month < "04"))
-test <- full %>% filter(year == "2015" & month >= "04")
+train <- full %>% filter(year == "2014" | (year == "2015" & month < "03"))
+test <- full %>% filter(year == "2015" & month >= "03")
 kable(head(train))
 ```
 
-## Initial Model Building
+## Model Building
+
+### Poisson Regression
+A Poisson process is a random process in which events occur independently of one another and the time between events is exponentially distributed. Under this model, the number of events that occur within a fixed time period is Poisson distrubuted. These processes are often used to model systems such as calls arriving to a call center or customers arriving at a store.
+
+The Poisson process is a natural fit for modeling a bike sharing network. Under this model, the number of arrivals (and departures) to a station over the next hour is Poisson distributed. We have to assume that arrivals are independent of each other as are departures. This is not entirely justified because it is certainly possible to have couples or groups of people who ride bikes together.
+
+I focus my efforts on Poisson regression. Arrivals and departures can be thought of as Poisson processes. This relies on the assumption that arrivals are independent from one another.
 
 ```{r}
-train.st <- filter(train, station_id == 4)
-test.st <- filter(test, station_id == 4)
+train.st <- filter(train, station_id == 69)
+test.st <- filter(test, station_id == 69)
 fit <- glm(arrivals ~ factor(weekday) + factor(hour) + factor(hour):factor(weekday), data = train.st, family = "poisson")
 
 preds <- predict(fit, newdata = test.st, type = "response")
 mean(abs(test.st$arrivals - preds)**2)
 ```
+
+## Arrival and Departure Model Evaluation
+
+
+
+## Combining Arrival and Departure Models
+
+The difference of two independent Poisson distributions follows the [Skellam distribution](http://en.wikipedia.org/wiki/Skellam_distribution). If we assume that the arrival and departure processes to a given station are independent (reasonable), then this means that we can model the net change in bikes at a given station with the Skellam distribution.
