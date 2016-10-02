@@ -21,79 +21,37 @@ setwd("~/Documents/Projects/BikeShare/Rmd")
 
 ## Data
 
-I will use data on the Bay Area Bike Share program publically available [here](http://www.bayareabikeshare.com/open-data).
+I will use data on the Bay Area Bike Share program publically available [here](http://www.bayareabikeshare.com/open-data) that consists of individual records for all 525,944 trips made between 3/1/2014 and 8/31/2015.
 
 ```{r}
 library(dplyr)
 library(readr)
 library(stringr)
+library(knitr)
 library(ggplot2)
 library(scales)
 library(h2o)
 source("../R/helpers.R")
 ```
 
-## Station Availability
-
-```{r eval=FALSE}
-file_paths <- getFilePaths()
-status_data <- read_csv(file_paths$status[3])
-```
-
-```{r}
-status_data <- status_data %>%
-  mutate(month = format(time, "%m"), 
-         day = format(time, "%a"),
-         hour = format(time, "%H"),
-         minute = format(time, "%M"),
-         weekday = ifelse(format(time, "%u") < 6, "1", "0"),
-         hm = as.POSIXct(format(time, "%H:%M"), tz = "", format = "%H:%M"))
-```
-
-When are stations empty?
-
-```{r}
-empty <- filter(status_data, bikes_available == 0)
-ggplot(empty, aes(x=as.numeric(hour))) + 
-  geom_histogram(binwidth = 1) + 
-  labs(x = "Hour", y = "# of Minutes Empty", title = "Empty Docks by Hour")
-ggplot(empty, aes(x=day)) +
-  geom_bar() + 
-  scale_x_discrete(limits = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) +
-  labs(x = "Day of the Week", y = "# of Minutes Empty", title = "Empty Docks by Day of the Week")
-```
-
-When are stations full?
-
-```{r}
-full <- filter(status_data, docks_available == 0)
-ggplot(full, aes(x=as.numeric(hour))) + 
-  geom_histogram(binwidth = 1) + 
-  labs(x = "Hour", y = "# of Minutes Full", title = "Full Docks by Hour")
-ggplot(full, aes(x=day)) +
-  geom_bar() + 
-  scale_x_discrete(limits = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) +
-  labs(x = "Day of the Week", y = "# of Minutes Empty", title = "Full Docks by Day of the Week")
-```
-
-```{r}
-ggplot(filter(agg, station_id == 77), aes(x = hm, y = avg_bikes_available,
-                                         group = weekday, color = weekday)) +
-  geom_line() +
-  scale_x_datetime(labels = date_format("%H:%M", tz = "America/Los_Angeles"))
-```
-
 ## Building the Training Set
 
+I build the training set from individual trip records using `dplyr` by aggregating over every hour of every day. The definition of `getTrainingSet` can be found [here](http://github.com/llefebure).
+
 ```{r}
-train <- getTrainingSet()
-train
+full <- getProcessedTripData()
+train <- full %>% filter(year == "2014" | (year == "2015" & month < "04"))
+test <- full %>% filter(year == "2015" & month >= "04")
+kable(head(train))
 ```
 
 ## Initial Model Building
 
-I will use Poisson regression. I have been wanting to use the h2o package after a presentation by Erin LeDell in one of my classes at Stanford. H2O provides distributed implementations of popular machine learning algorithms, and while I won't use the distributed capability of the package in this project, this will be good practice to potentially do so in a future project.
-
 ```{r}
-local.h2o <- h2o.init()
+train.st <- filter(train, station_id == 4)
+test.st <- filter(test, station_id == 4)
+fit <- glm(arrivals ~ factor(weekday) + factor(hour) + factor(hour):factor(weekday), data = train.st, family = "poisson")
+
+preds <- predict(fit, newdata = test.st, type = "response")
+mean(abs(test.st$arrivals - preds)**2)
 ```
