@@ -81,5 +81,12 @@ getProcessedTripData <- function(){
   # outer joins fill with NA's, so we need to convert these to 0's
   processed_final[is.na(processed_final)] = 0
   
+  # add column for net change
+  processed_final <- mutate(processed_final, net = arrivals - departures)
+  
+  # change to factors
+  processed_final$weekday <- factor(processed_final$weekday)
+  processed_final$hour <- factor(processed_final$hour)
+  
   return(processed_final)
 }
