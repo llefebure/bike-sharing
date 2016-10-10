@@ -11,13 +11,15 @@ Bike sharing systems are not without flaws. The most obvious problem is that wit
 
 ## The Task
 
-In this analysis, I predict the net change in bike availability at each station in the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system over the next hour. This is important for two reasons. It is valuable to users who want to know if a bike will be available at their pickup station, and rebalancers need to know which stations they should focus their efforts on.
+In this analysis, I predict the net change in bike availability at each station in the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system over the next hour. I accomplish this using Poisson regression models for separately predicting arrivals and departures. The parametric structure and assumptions of Poisson regression additionally enable probabilistic reasoning about the future availability of bikes.
+
+This task is important for two reasons. Users want to know how likely it is that there will be a bike at their preferred pickup station, and rebalancers need to know how they should distribute bikes to optimally handle future demand.
 
 ```{r echo=FALSE, eval=FALSE}
 setwd("~/Documents/Projects/BikeShare/Rmd")
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 library(dplyr)
 library(readr)
 library(stringr)
@@ -29,72 +31,78 @@ source("../R/helpers.R")
 
 ## Data
 
-The Bay Area Bike Share program makes trip, station, and station availability data publically available [here](http://www.bayareabikeshare.com/open-data). The trip data consists of individual records for all 525,944 trips made between 3/1/2014 and 8/31/2015 complete with information like origin and destination, duration, and start time.
+The Bay Area Bike Share program makes trip, station, weather, and station availability data publically available [here](http://www.bayareabikeshare.com/open-data). The trip data consists of individual records for all 525,944 trips made between 3/1/2014 and 8/31/2015 complete with information like origin and destination, duration, and start time.
 
 ### Building the Data Set
 
-I use `dplyr` to aggregate over this trip data to build the data set for training and testing. This data munging problem has its own challenges, and the full code for the `getProcessedTripData` function can be found [here](http://github.com/llefebure/bike-sharing/blob/master/R/helpers.R). In particular, I strip out the number of arrivals and departures for each station at every hour of every day.
+I use `dplyr` to aggregate this trip data and strip out relevant features for training and testing. This data munging problem has its own challenges, and the full code for the `getProcessedTripData` function can be found [here](http://github.com/llefebure/bike-sharing/blob/master/R/helpers.R). In particular, I infer the number of arrivals and departures for each station at every hour of every day and append weather and station availability features. The full data set consists of eighteen months. I hold out the final three months of data for testing.
 
-The full data set consists of eighteen months of data. I train my models on the first year of data and test on the remaining six months.
-
-```{r}
-full <- getProcessedTripData()
+```{r warning=FALSE}
+full <- getProcessedTripData() %>%
+  filter(!is.na(bikes_available))
 train <- full %>% filter(year == "2014" | (year == "2015" & month < "03"))
-test <- full %>% filter(year == "2015" & month >= "03")
-kable(head(train))
+test <- full %>% filter(year == "2015" & month >= "06")
+kable(head(test %>% filter (weekday == "Weekend")))
 ```
 
 ## Model Building 
 
-I am interested in predicting the net change in the number of bikes at each station over the next hour. The net change is simply the number of arrivals minus the number of departures, so there are multiple ways to approach this problem. I can predict the net change directly or make predictions for the number of arrivals and departures separately. I focus efforts on the latter using Poisson regression and compare the two approaches later.
+I am interested in predicting the net change in the number of bikes at each station over the next hour. The net change is simply the number of arrivals minus the number of departures, so there are multiple ways to approach this problem. I can predict the net change directly or make predictions for the number of arrivals and departures separately. I focus efforts on the latter using Poisson regression.
 
 ### Poisson Regression
 A Poisson process is a random process in which events occur independently of one another and the time between events is exponentially distributed. Under this model, the number of events that occur within a fixed time period is Poisson distrubuted. These processes are often used to model systems such as calls arriving to a call center or customers arriving at a store.
 
-The Poisson process is a natural fit for modeling a bike sharing network. If we consider arrivals and departures as independent Poisson processes, the number of arrivals and departures to a station over the next hour are each Poisson distributed. Under this model, we have to assume that events are independent of each other. This is not entirely justified because it is certainly possible to have couples or groups of people riding bikes together.
+The Poisson process is a natural fit for modeling a bike sharing network. If we consider arrivals and departures as independent Poisson processes, the number of arrivals and departures to a station over the next hour are each Poisson distributed. Under this model, we have to assume that events are independent of each other. This is not entirely justified because it is certainly possible to have couples or groups of people riding bikes together, but this method has had success in similar settings.
 
 To impose this model structure on the problem, I use Poisson regression. Poisson regression is a generalized linear model where the response is assumed to be Poisson distributed. I fit separate models for the arrival and departure processes and combine them to predict the net change.
 
 ### Features
 
-I use weekday, hour, and their interaction as categorical predictors and mean temperature as a quantitative predictor.
+I use weekday, hour, and their interaction as categorical predictors and mean temperature and bikes available as quantitative predictors.
 
 ### Fitting
 
-### Evaluation and Comparison
+I fit the model independently on each station's data.
 
-Here I will talk about evaluation metrics and comparison to other methods with regards to point predictions. I should include a graph.
+```{r}
+fitPoisson <- function(st) {
+  train.st <- filter(train, station_id == st)
+  test.st <- filter(test, station_id == st)
+  arr.fit <- glm(arrivals ~ weekday + hour + weekday:hour + `Mean TemperatureF` + bikes_available,
+                 data = train.st, family = "poisson")
+  dep.fit <- glm(departures ~ weekday + hour + weekday:hour + `Mean TemperatureF` + bikes_available,
+                 data = train.st, family = "poisson")
+  list(arr.fit = arr.fit,
+       dep.fit = dep.fit,
+       test = test.st)
+}
+```
 
 ### Combining Arrival and Departure Models to make Probabilistic Predictions
 
-The difference of two independent Poisson distributions follows the [Skellam distribution](http://en.wikipedia.org/wiki/Skellam_distribution). If we assume that the arrival and departure processes to a given station are independent, then the Poisson arrival and departure models allow us to predict an entire distribution for the net change rather than a single point. An example of how this can be done is below.
+The difference of two independent Poisson distributions follows the [Skellam distribution](http://en.wikipedia.org/wiki/Skellam_distribution). If we assume that the arrival and departure processes to a given station are independent, then the Poisson arrival and departure models allow us to predict an entire distribution for the net change rather than a single point. The following example shows how this can be done.
 
 ```{r}
-train.st <- filter(train, station_id == 69)
-test.st <- filter(test, station_id == 69)
-```
-
-```{r}
-arr.fit <- glm(arrivals ~ weekday + hour + weekday:hour, data = train.st, family = "poisson")
-dep.fit <- glm(departures ~ weekday + hour + weekday:hour, data = train.st, family = "poisson")
+pois.fit <- fitPoisson(69) # station_id 69 is SF Caltrain
 ```
 
 After fitting the arrival and departure models, we can use them to make point predictions as before. These predictions act as parameters to the Skellam distribution, and this allows us to predict, for example, quartiles.
 
 ```{r}
-test.st <- mutate(test.st, arr.param = predict(arr_fit, newdata = test.st, type = "response"),
-                  dep.param = predict(dep_fit, newdata = test.st, type = "response"),
-                  q.25 = qskellam(.25, arr.param, dep.param),
-                  q.50 = qskellam(.50, arr.param, dep.param),
-                  q.75 = qskellam(.75, arr.param, dep.param))
+dist.pred <- mutate(pois.fit$test, 
+                    arr.param = predict(pois.fit$arr.fit, newdata = pois.fit$test, 
+                                                 type = "response"),
+                    dep.param = predict(pois.fit$dep.fit, newdata = pois.fit$test, 
+                                        type = "response"),
+                    q.25 = qskellam(.25, arr.param, dep.param),
+                    q.50 = qskellam(.50, arr.param, dep.param),
+                    q.75 = qskellam(.75, arr.param, dep.param))
 ```
 
-In the table below, we can see a slice from the test set and quartile predictions.
+In the table below, we can see a slice from the test set that includes the true net change and quartile predictions for the net change.
 
 ```{r}
-kable(head(test.st %>% select(hour, weekday, q.25, q.50, q.75), 15))
+kable(head(dist.pred %>% filter(weekday == "Weekday") %>% select(hour, weekday, net, q.25, q.50, q.75), 15))
 ```
 
 ## Conclusion
-
-I think that Poisson regression has the potential to give some valuable insight into the workings of a bike sharing network.

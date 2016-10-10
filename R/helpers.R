@@ -14,13 +14,25 @@ getFilePaths = function(){
 #' 
 #' @description Derive hourly arrivals and departures from the trip data
 #' @return tbl_df with the processed data set
-getProcessedTripData <- function(){
+getProcessedTripData <- function(fn = "../data/processed_trips.Rds"){
+  if (!is.null(fn)) {
+    return(readRDS(fn))
+  }
   
+  # read in and do some preprocessing on raw data files
   file_paths <- getFilePaths()
   trip_data <- rbind(read_csv(file_paths$trip[2]),
                      read_csv(file_paths$trip[3]))
   weather_data <- rbind(read_csv(file_paths$weather[2]),
                         read_csv(file_paths$weather[3]))
+  status_data <- rbind(read_csv(file_paths$status[2]),
+                       read_csv(file_paths$status[3])) %>%
+    filter(format(time, "%M") == "00") %>%
+    mutate(year = format(time, "%Y"),
+           month = format(time, "%m"),
+           day = format(time, "%d"),
+           hour = format(time, "%H")) %>%
+    select(station_id, bikes_available, docks_available, year, month, day, hour)
   station_data <- rbind(read_csv(file_paths$station[2]),
                         read_csv(file_paths$station[3])) %>%
     select(station_id, landmark) %>%
@@ -73,7 +85,7 @@ getProcessedTripData <- function(){
   
   # need to pad with rows for which there were zero arrivals and departures, so
   # we first need to get a grid with all combinations of station_id, year, month, day, etc.
-  # I use the join_key = "" to simulate Cartestian product
+  # I use the join_key = "" to simulate Cartesian product
   date_range <- tbl_df(data.frame(date = seq.Date(from = as.Date("2014-03-01"), 
                                                   to = as.Date("2015-08-31"), 
                                                   by = 1))) %>%
@@ -100,7 +112,7 @@ getProcessedTripData <- function(){
   # add zips to join with weather data
   processed <- inner_join(processed, station_data)
   
-  # extract date from weather data
+  # add derived date fields to weather data
   weather_data <- weather_data %>% 
     mutate(time = as.POSIXct(PDT, format = "%m/%d/%Y"),
            year = format(time, "%Y"),
@@ -110,6 +122,9 @@ getProcessedTripData <- function(){
   
   # append weather info
   processed <- inner_join(processed, weather_data)
+  
+  # add status data
+  processed <- full_join(processed, status_data)
   
   # change to factors
   processed$weekday <- factor(processed$weekday)

@@ -4,7 +4,7 @@ library(dplyr)
 library(readr)
 library(ggplot2)
 library(scales)
-source("../misc/helpers.R")
+source("../R/helpers.R")
 
 file_paths <- getFilePaths()
 

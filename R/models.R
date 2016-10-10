@@ -15,9 +15,9 @@ test <- full %>% filter(year == "2015" & month >= "03")
 
 ### model building
 
-ARR_FORM <- arrivals ~ weekday + hour + weekday:hour + `Mean TemperatureF`
-DEP_FORM <- departures ~ weekday + hour + weekday:hour + `Mean TemperatureF`
-NET_FORM <- net ~ weekday + hour + weekday:hour + `Mean TemperatureF`
+ARR_FORM <- arrivals ~ weekday + hour + weekday:hour + `Mean TemperatureF` + bikes_available
+DEP_FORM <- departures ~ weekday + hour + weekday:hour + `Mean TemperatureF` + bikes_available
+NET_FORM <- net ~ weekday + hour + weekday:hour + `Mean TemperatureF` + bikes_available
 
 # evaluation metrics to compare methods
 evaluate <- function(obs, preds) {

@@ -117,44 +117,20 @@ $(document).ready(function () {
 <p>Bike sharing systems are not without flaws. The most obvious problem is that with enough demand, all of the bikes at your preferred pickup station could be gone. Another (potentially more frustrating) issue is that your preferred dropoff station could be full. Bike sharing systems usually employ people to drive around and rebalance the stock at different stations.</p>
 <div id="the-task" class="section level2">
 <h2>The Task</h2>
-<p>In this analysis, I predict the net change in bike availability at each station in the <a href="http://www.bayareabikeshare.com/">Bay Area Bike Share</a> system over the next hour. This is important for two reasons. It is valuable to users who want to know if a bike will be available at their pickup station, and rebalancers need to know which stations they should focus their efforts on.</p>
-<pre class="r"><code>library(dplyr)</code></pre>
-<pre><code>## 
-## Attaching package: 'dplyr'</code></pre>
-<pre><code>## The following objects are masked from 'package:stats':
-## 
-##     filter, lag</code></pre>
-<pre><code>## The following objects are masked from 'package:base':
-## 
-##     intersect, setdiff, setequal, union</code></pre>
-<pre class="r"><code>library(readr)
-library(stringr)
-library(knitr)
-library(ggplot2)</code></pre>
-<pre><code>## Warning: package 'ggplot2' was built under R version 3.2.4</code></pre>
-<pre class="r"><code>source(&quot;../R/helpers.R&quot;)</code></pre>
+<p>In this analysis, I predict the net change in bike availability at each station in the <a href="http://www.bayareabikeshare.com/">Bay Area Bike Share</a> system over the next hour. I accomplish this using Poisson regression models for separately predicting arrivals and departures. The parametric structure and assumptions of Poisson regression additionally enable probabilistic reasoning about the future availability of bikes.</p>
+<p>This task is important for two reasons. Users want to know how likely it is that there will be a bike at their preferred pickup station, and rebalancers need to know how they should distribute bikes to optimally handle future demand.</p>
 </div>
 <div id="data" class="section level2">
 <h2>Data</h2>
-<p>The Bay Area Bike Share program makes trip, station, and station availability data publically available <a href="http://www.bayareabikeshare.com/open-data">here</a>. The trip data consists of individual records for all 525,944 trips made between 3/1/2014 and 8/31/2015 complete with information like origin and destination, duration, and start time.</p>
+<p>The Bay Area Bike Share program makes trip, station, weather, and station availability data publically available <a href="http://www.bayareabikeshare.com/open-data">here</a>. The trip data consists of individual records for all 525,944 trips made between 3/1/2014 and 8/31/2015 complete with information like origin and destination, duration, and start time.</p>
 <div id="building-the-data-set" class="section level3">
 <h3>Building the Data Set</h3>
-<p>I use <code>dplyr</code> to aggregate over this trip data to build the data set for training and testing. This data munging problem has its own challenges, and the full code for the <code>getProcessedTripData</code> function can be found <a href="http://github.com/llefebure/bike-sharing/blob/master/R/helpers.R">here</a>. In particular, I strip out the number of arrivals and departures for each station at every hour of every day.</p>
-<p>The full data set consists of eighteen months of data. I train my models on the first year of data and test on the remaining six months.</p>
-<pre class="r"><code>full &lt;- getProcessedTripData()</code></pre>
-<pre><code>## Joining by: c(&quot;station_id&quot;, &quot;year&quot;, &quot;month&quot;, &quot;day&quot;, &quot;dow&quot;, &quot;hour&quot;, &quot;weekday&quot;)</code></pre>
-<pre><code>## Joining by: &quot;join_key&quot;</code></pre>
-<pre><code>## Warning in outer_join_impl(x, y, by$x, by$y): joining factor and character
-## vector, coercing into character vector</code></pre>
-<pre><code>## Joining by: &quot;join_key&quot;</code></pre>
-<pre><code>## Warning in outer_join_impl(x, y, by$x, by$y): joining factor and character
-## vector, coercing into character vector</code></pre>
-<pre><code>## Joining by: c(&quot;station_id&quot;, &quot;year&quot;, &quot;month&quot;, &quot;day&quot;, &quot;dow&quot;, &quot;hour&quot;, &quot;weekday&quot;)</code></pre>
-<pre><code>## Warning in left_join_impl(x, y, by$x, by$y): joining character vector and
-## factor, coercing into character vector</code></pre>
-<pre class="r"><code>train &lt;- full %&gt;% filter(year == &quot;2014&quot; | (year == &quot;2015&quot; &amp; month &lt; &quot;03&quot;))
-test &lt;- full %&gt;% filter(year == &quot;2015&quot; &amp; month &gt;= &quot;03&quot;)
-kable(head(train))</code></pre>
+<p>I use <code>dplyr</code> to aggregate this trip data and strip out relevant features for training and testing. This data munging problem has its own challenges, and the full code for the <code>getProcessedTripData</code> function can be found <a href="http://github.com/llefebure/bike-sharing/blob/master/R/helpers.R">here</a>. In particular, I infer the number of arrivals and departures for each station at every hour of every day and append weather and station availability features. The full data set consists of eighteen months. I hold out the final three months of data for testing.</p>
+<pre class="r"><code>full &lt;- getProcessedTripData() %&gt;%
+  filter(!is.na(bikes_available))
+train &lt;- full %&gt;% filter(year == &quot;2014&quot; | (year == &quot;2015&quot; &amp; month &lt; &quot;03&quot;))
+test &lt;- full %&gt;% filter(year == &quot;2015&quot; &amp; month &gt;= &quot;06&quot;)
+kable(head(test %&gt;% filter (weekday == &quot;Weekend&quot;)))</code></pre>
 <table>
 <thead>
 <tr class="header">
@@ -168,80 +144,115 @@ kable(head(train))</code></pre>
 <th align="right">arrivals</th>
 <th align="right">departures</th>
 <th align="right">net</th>
+<th align="left">landmark</th>
+<th align="right">Zip</th>
+<th align="right">Mean TemperatureF</th>
+<th align="right">bikes_available</th>
+<th align="right">docks_available</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
 <td align="right">2</td>
-<td align="left">2014</td>
-<td align="left">03</td>
-<td align="left">01</td>
+<td align="left">2015</td>
+<td align="left">06</td>
+<td align="left">06</td>
 <td align="left">Sat</td>
 <td align="left">00</td>
 <td align="left">Weekend</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="right">0</td>
+<td align="left">San Jose</td>
+<td align="right">95113</td>
+<td align="right">67</td>
+<td align="right">5</td>
+<td align="right">22</td>
 </tr>
 <tr class="even">
 <td align="right">2</td>
-<td align="left">2014</td>
-<td align="left">03</td>
-<td align="left">01</td>
+<td align="left">2015</td>
+<td align="left">06</td>
+<td align="left">06</td>
 <td align="left">Sat</td>
 <td align="left">01</td>
 <td align="left">Weekend</td>
 <td align="right">0</td>
-<td align="right">0</td>
-<td align="right">0</td>
+<td align="right">1</td>
+<td align="right">-1</td>
+<td align="left">San Jose</td>
+<td align="right">95113</td>
+<td align="right">67</td>
+<td align="right">5</td>
+<td align="right">22</td>
 </tr>
 <tr class="odd">
 <td align="right">2</td>
-<td align="left">2014</td>
-<td align="left">03</td>
-<td align="left">01</td>
+<td align="left">2015</td>
+<td align="left">06</td>
+<td align="left">06</td>
 <td align="left">Sat</td>
 <td align="left">02</td>
 <td align="left">Weekend</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="right">0</td>
+<td align="left">San Jose</td>
+<td align="right">95113</td>
+<td align="right">67</td>
+<td align="right">4</td>
+<td align="right">23</td>
 </tr>
 <tr class="even">
 <td align="right">2</td>
-<td align="left">2014</td>
-<td align="left">03</td>
-<td align="left">01</td>
+<td align="left">2015</td>
+<td align="left">06</td>
+<td align="left">06</td>
 <td align="left">Sat</td>
 <td align="left">03</td>
 <td align="left">Weekend</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="right">0</td>
+<td align="left">San Jose</td>
+<td align="right">95113</td>
+<td align="right">67</td>
+<td align="right">4</td>
+<td align="right">23</td>
 </tr>
 <tr class="odd">
 <td align="right">2</td>
-<td align="left">2014</td>
-<td align="left">03</td>
-<td align="left">01</td>
+<td align="left">2015</td>
+<td align="left">06</td>
+<td align="left">06</td>
 <td align="left">Sat</td>
 <td align="left">04</td>
 <td align="left">Weekend</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="right">0</td>
+<td align="left">San Jose</td>
+<td align="right">95113</td>
+<td align="right">67</td>
+<td align="right">4</td>
+<td align="right">23</td>
 </tr>
 <tr class="even">
 <td align="right">2</td>
-<td align="left">2014</td>
-<td align="left">03</td>
-<td align="left">01</td>
+<td align="left">2015</td>
+<td align="left">06</td>
+<td align="left">06</td>
 <td align="left">Sat</td>
 <td align="left">05</td>
 <td align="left">Weekend</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="right">0</td>
+<td align="left">San Jose</td>
+<td align="right">95113</td>
+<td align="right">67</td>
+<td align="right">4</td>
+<td align="right">23</td>
 </tr>
 </tbody>
 </table>
@@ -249,29 +260,181 @@ kable(head(train))</code></pre>
 </div>
 <div id="model-building" class="section level2">
 <h2>Model Building</h2>
-<p>I am interested in predicting the net change in the number of bikes at each station over the next hour. The net change is simply the number of arrivals minus the number of departures, so there are multiple ways to approach this problem. I can predict the net change directly or make predictions for the number of arrivals and departures separately. I focus efforts on the latter using Poisson regression and compare the two approaches later.</p>
+<p>I am interested in predicting the net change in the number of bikes at each station over the next hour. The net change is simply the number of arrivals minus the number of departures, so there are multiple ways to approach this problem. I can predict the net change directly or make predictions for the number of arrivals and departures separately. I focus efforts on the latter using Poisson regression.</p>
 <div id="poisson-regression" class="section level3">
 <h3>Poisson Regression</h3>
 <p>A Poisson process is a random process in which events occur independently of one another and the time between events is exponentially distributed. Under this model, the number of events that occur within a fixed time period is Poisson distrubuted. These processes are often used to model systems such as calls arriving to a call center or customers arriving at a store.</p>
-<p>The Poisson process is a natural fit for modeling a bike sharing network. If we consider arrivals and departures as independent Poisson processes, the number of arrivals and departures to a station over the next hour are each Poisson distributed. Under this model, we have to assume that events are independent of each other. This is not entirely justified because it is certainly possible to have couples or groups of people riding bikes together.</p>
+<p>The Poisson process is a natural fit for modeling a bike sharing network. If we consider arrivals and departures as independent Poisson processes, the number of arrivals and departures to a station over the next hour are each Poisson distributed. Under this model, we have to assume that events are independent of each other. This is not entirely justified because it is certainly possible to have couples or groups of people riding bikes together, but this method has had success in similar settings.</p>
 <p>To impose this model structure on the problem, I use Poisson regression. Poisson regression is a generalized linear model where the response is assumed to be Poisson distributed. I fit separate models for the arrival and departure processes and combine them to predict the net change.</p>
 </div>
 <div id="features" class="section level3">
 <h3>Features</h3>
-<p>I use weekday and hour.</p>
+<p>I use weekday, hour, and their interaction as categorical predictors and mean temperature and bikes available as quantitative predictors.</p>
 </div>
 <div id="fitting" class="section level3">
 <h3>Fitting</h3>
-<pre class="r"><code>fitPoisson &lt;- function(train, test) {
+<p>I fit the model independently on each station’s data.</p>
+<pre class="r"><code>fitPoisson &lt;- function(st) {
+  train.st &lt;- filter(train, station_id == st)
+  test.st &lt;- filter(test, station_id == st)
+  arr.fit &lt;- glm(arrivals ~ weekday + hour + weekday:hour + `Mean TemperatureF` + bikes_available,
+                 data = train.st, family = &quot;poisson&quot;)
+  dep.fit &lt;- glm(departures ~ weekday + hour + weekday:hour + `Mean TemperatureF` + bikes_available,
+                 data = train.st, family = &quot;poisson&quot;)
+  list(arr.fit = arr.fit,
+       dep.fit = dep.fit,
+       test = test.st)
 }</code></pre>
-</div>
-<div id="evaluation-and-comparison" class="section level3">
-<h3>Evaluation and Comparison</h3>
-<p>Here I will talk about evaluation metrics and comparison to other methods with regards to point predictions. I should include a graph.</p>
 </div>
 <div id="combining-arrival-and-departure-models-to-make-probabilistic-predictions" class="section level3">
 <h3>Combining Arrival and Departure Models to make Probabilistic Predictions</h3>
-<p>The difference of two independent Poisson distributions follows the <a href="http://en.wikipedia.org/wiki/Skellam_distribution">Skellam distribution</a>. If we assume that the arrival and departure processes to a given station are independent (reasonable), then we can model the net change in bikes over the next hour at a given station with the Skellam distribution.</p>
+<p>The difference of two independent Poisson distributions follows the <a href="http://en.wikipedia.org/wiki/Skellam_distribution">Skellam distribution</a>. If we assume that the arrival and departure processes to a given station are independent, then the Poisson arrival and departure models allow us to predict an entire distribution for the net change rather than a single point. The following example shows how this can be done.</p>
+<pre class="r"><code>pois.fit &lt;- fitPoisson(69) # station_id 69 is SF Caltrain</code></pre>
+<p>After fitting the arrival and departure models, we can use them to make point predictions as before. These predictions act as parameters to the Skellam distribution, and this allows us to predict, for example, quartiles.</p>
+<pre class="r"><code>dist.pred &lt;- mutate(pois.fit$test, 
+                    arr.param = predict(pois.fit$arr.fit, newdata = pois.fit$test, 
+                                                 type = &quot;response&quot;),
+                    dep.param = predict(pois.fit$dep.fit, newdata = pois.fit$test, 
+                                        type = &quot;response&quot;),
+                    q.25 = qskellam(.25, arr.param, dep.param),
+                    q.50 = qskellam(.50, arr.param, dep.param),
+                    q.75 = qskellam(.75, arr.param, dep.param))</code></pre>
+<p>In the table below, we can see a slice from the test set that includes the true net change and quartile predictions for the net change.</p>
+<pre class="r"><code>kable(head(dist.pred %&gt;% filter(weekday == &quot;Weekday&quot;) %&gt;% select(hour, weekday, net, q.25, q.50, q.75), 15))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">hour</th>
+<th align="left">weekday</th>
+<th align="right">net</th>
+<th align="right">q.25</th>
+<th align="right">q.50</th>
+<th align="right">q.75</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">00</td>
+<td align="left">Weekday</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+</tr>
+<tr class="even">
+<td align="left">01</td>
+<td align="left">Weekday</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+</tr>
+<tr class="odd">
+<td align="left">02</td>
+<td align="left">Weekday</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+</tr>
+<tr class="even">
+<td align="left">03</td>
+<td align="left">Weekday</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+</tr>
+<tr class="odd">
+<td align="left">04</td>
+<td align="left">Weekday</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+</tr>
+<tr class="even">
+<td align="left">05</td>
+<td align="left">Weekday</td>
+<td align="right">1</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+</tr>
+<tr class="odd">
+<td align="left">06</td>
+<td align="left">Weekday</td>
+<td align="right">5</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="right">2</td>
+</tr>
+<tr class="even">
+<td align="left">07</td>
+<td align="left">Weekday</td>
+<td align="right">-4</td>
+<td align="right">-5</td>
+<td align="right">-3</td>
+<td align="right">-1</td>
+</tr>
+<tr class="odd">
+<td align="left">08</td>
+<td align="left">Weekday</td>
+<td align="right">-15</td>
+<td align="right">-11</td>
+<td align="right">-8</td>
+<td align="right">-5</td>
+</tr>
+<tr class="even">
+<td align="left">09</td>
+<td align="left">Weekday</td>
+<td align="right">-1</td>
+<td align="right">-5</td>
+<td align="right">-2</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="left">10</td>
+<td align="left">Weekday</td>
+<td align="right">-1</td>
+<td align="right">-2</td>
+<td align="right">-1</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="left">11</td>
+<td align="left">Weekday</td>
+<td align="right">3</td>
+<td align="right">-1</td>
+<td align="right">0</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="left">12</td>
+<td align="left">Weekday</td>
+<td align="right">0</td>
+<td align="right">-1</td>
+<td align="right">0</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="left">13</td>
+<td align="left">Weekday</td>
+<td align="right">0</td>
+<td align="right">-1</td>
+<td align="right">0</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="left">14</td>
+<td align="left">Weekday</td>
+<td align="right">1</td>
+<td align="right">-1</td>
+<td align="right">0</td>
+<td align="right">1</td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 <div id="conclusion" class="section level2">
