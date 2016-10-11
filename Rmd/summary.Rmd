@@ -11,7 +11,7 @@ Bike sharing systems are not without flaws. The most obvious problem is that wit
 
 ## The Task
 
-In this analysis, I predict the net change in bike availability at each station in the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system over the next hour. I accomplish this using Poisson regression models for separately predicting arrivals and departures. The parametric structure and assumptions of Poisson regression additionally enable probabilistic reasoning about the future availability of bikes.
+In this analysis, I experiment with using Poisson regression for predicting the net change in bike availability at each station in the [Bay Area Bike Share](http://www.bayareabikeshare.com/) system over the next hour. The parametric structure and assumptions of Poisson regression enable probabilistic predictions rather than simply point predictions.
 
 This task is important for two reasons. Users want to know how likely it is that there will be a bike at their preferred pickup station, and rebalancers need to know how they should distribute bikes to optimally handle future demand.
 
@@ -40,7 +40,7 @@ I use `dplyr` to aggregate this trip data and strip out relevant features for tr
 ```{r warning=FALSE}
 full <- getProcessedTripData() %>%
   filter(!is.na(bikes_available))
-train <- full %>% filter(year == "2014" | (year == "2015" & month < "03"))
+train <- full %>% filter(year == "2014" | (year == "2015" & month < "06"))
 test <- full %>% filter(year == "2015" & month >= "06")
 kable(head(test %>% filter (weekday == "Weekend")))
 ```
@@ -78,6 +78,29 @@ fitPoisson <- function(st) {
 }
 ```
 
+### Evaluation
+
+Measuring the success of these models is difficult because the error rate for each station will naturally be different because of different demand. Some stations have more demand and thus higher variance. I'll benchmark the model against weekday/hour averages.
+
+```{r eval=FALSE}
+mse.comp <- t(sapply(unique(full$station_id), function(st) {
+  mod <- fitPoisson(st)
+
+  group.avgs <- train %>% group_by(station_id, weekday, hour) %>% summarize(group_avg = mean(net))
+  test.group.avg <- inner_join(mod$test, group.avgs)
+  mse.avg <- mean((test.group.avg$net - test.group.avg$group_avg)**2)
+  
+  preds <- predict(mod$arr.fit, newdata = mod$test, type = "response") - predict(mod$dep.fit, newdata = mod$test, type = "response")
+  mse.pois <- mean((mod$test$net - preds)**2)
+  c(mse.avg, mse.pois)
+}))
+
+mse.comp <- data.frame(mse.comp)
+mse.comp$col <- ifelse(mse.comp$X1 > mse.comp$X2, "Good", "Bad")
+qplot(mse.comp[,1], mse.comp[,2], color = mse.comp$col)
+mean(mse.comp$col[mse.comp$X1 > 2] == "Good", na.rm = T)
+```
+
 ### Combining Arrival and Departure Models to make Probabilistic Predictions
 
 The difference of two independent Poisson distributions follows the [Skellam distribution](http://en.wikipedia.org/wiki/Skellam_distribution). If we assume that the arrival and departure processes to a given station are independent, then the Poisson arrival and departure models allow us to predict an entire distribution for the net change rather than a single point. The following example shows how this can be done.
@@ -86,7 +109,7 @@ The difference of two independent Poisson distributions follows the [Skellam dis
 pois.fit <- fitPoisson(69) # station_id 69 is SF Caltrain
 ```
 
-After fitting the arrival and departure models, we can use them to make point predictions as before. These predictions act as parameters to the Skellam distribution, and this allows us to predict, for example, quartiles.
+After fitting the arrival and departure models, we can use them to make point predictions as before. These predictions act as parameters to the Skellam distribution, and this allows us to predict percentiles.
 
 ```{r}
 dist.pred <- mutate(pois.fit$test, 
@@ -105,4 +128,14 @@ In the table below, we can see a slice from the test set that includes the true 
 kable(head(dist.pred %>% filter(weekday == "Weekday") %>% select(hour, weekday, net, q.25, q.50, q.75), 15))
 ```
 
+```{r}
+qplot(net, q.50, data = dist.pred)
+```
+
 ## Conclusion
+
+My focus in this analysis was to leverage the assumptions of Poisson regression to make proabilistic predictions that have more practical use than point predictions. In theory, this is a really great approach, and my analysis above shows that it can produce very useful looking predictions. However, a prediction is only as good as its accuracy. This model seems to outperform group average predictions slightly. 
+
+There also may be a growth compononent.
+
+Features to include are holiday flags, special events flags, and more granular weather data (hourly and add precipitation). I could also add dow and bump up regularization.
