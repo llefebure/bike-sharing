@@ -1,0 +1,59 @@
+---
+title: "Analyzing the Accuracy of Google Maps Cycling Estimates"
+author: "Luke Lefebure"
+date: "October 10, 2016"
+output: html_document
+---
+
+I like riding my bike -- not only for exercise, but also for transportation whenever possible. I often use Google Maps to find a good route, but sometimes Google Maps cycling directions seem a bit off. I've always wondered how accurate these estimates actually are.
+
+Recently, I have been experimenting with data provided by the [Bay Area Bike Share](http://www.bayareabikeshare.com/open-data) (BABS) system. I think bike sharing networks are a cool concept, so this has been a fun side project. This data set contains individual trip data complete with origin, destination, and trip duration, so it is perfect for investigating my question.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(readr)
+library(stringr)
+library(knitr)
+library(ggplot2)
+source("../R/helpers.R")
+```
+
+Read in trip data:
+
+```{r}
+paths <- getFilePaths()
+trip_data <- lapply(paths$trip, function(fn) {
+  read_csv(fn) %>%
+    rename(origin_id = `Start Terminal`,
+           destination_id = `End Terminal`,
+           actual_duration = Duration) %>%
+    mutate(time = as.POSIXct(`Start Date`, format = "%m/%d/%Y %H:%M"),
+           year = format(time, "%Y"),
+           month = format(time, "%m"),
+           day = format(time, "%a"),
+           hour = format(time, "%H"),
+           minute = format(time, "%M")) %>%
+    select(origin_id, destination_id, actual_duration, year, month, day, hour, minute)
+})
+trip_data <- do.call("rbind", trip_data)
+```
+
+Read in Google Maps estimates. See [here](https://github.com/llefebure/bike-sharing/blob/master/R/google-api-trip-estimates.R) for how these were retrieved.
+
+```{r}
+gmaps_estimates <- readRDS("../data/gmaps_trip_estimates.Rds")
+```
+
+Merge:
+
+```{r}
+trip_data_with_est <- inner_join(trip_data, gmaps_estimates)
+```
+
+```{r}
+summary(trip_data_with_est$actual_duration - trip_data_with_est$duration)
+```
+
+```{r}
+ggplot(trip_data_with_est, aes(actual_duration - duration)) + geom_histogram() + xlim(c(-800, 800))
+```
