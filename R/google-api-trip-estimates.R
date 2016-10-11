@@ -1,3 +1,6 @@
+# this script hits the google maps directions api to get cycling distance and duration
+# estimates between stations in the BABS
+
 library(httr)
 library(readr)
 library(dplyr)
