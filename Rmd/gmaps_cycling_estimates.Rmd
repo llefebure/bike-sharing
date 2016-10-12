@@ -1,13 +1,15 @@
 ---
 title: "Analyzing the Accuracy of Google Maps Cycling Estimates"
-author: "Luke Lefebure"
-date: "October 10, 2016"
 output: html_document
 ---
 
-I like riding my bike -- not only for exercise, but also for transportation whenever possible. I often use Google Maps to find a good route, but sometimes Google Maps cycling directions seem a bit off. I've always wondered how accurate these estimates actually are.
+I like riding my bike -- not only for exercise, but also for transportation whenever possible. I often use Google Maps to find a good route, but sometimes their cycling directions seem a bit off. I have always wondered how accurate these estimates actually are.
 
 Recently, I have been experimenting with data provided by the [Bay Area Bike Share](http://www.bayareabikeshare.com/open-data) (BABS) system. I think bike sharing networks are a cool concept, so this has been a fun side project. This data set contains individual trip data complete with origin, destination, and trip duration, so it is perfect for investigating my question.
+
+```{r echo=FALSE, eval=FALSE}
+setwd("~/Documents/Projects/BikeShare/Rmd")
+```
 
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
 library(dplyr)
@@ -18,36 +20,45 @@ library(ggplot2)
 source("../R/helpers.R")
 ```
 
-Read in trip data:
-
-```{r}
+```{r warning=FALSE}
 paths <- getFilePaths()
-trip_data <- lapply(paths$trip, function(fn) {
+trip_data <- do.call("rbind", lapply(paths$trip, function(fn) {
   read_csv(fn) %>%
     rename(origin_id = `Start Terminal`,
            destination_id = `End Terminal`,
-           actual_duration = Duration) %>%
+           actual_duration = Duration,
+           trip_id = `Trip ID`) %>%
     mutate(time = as.POSIXct(`Start Date`, format = "%m/%d/%Y %H:%M"),
            year = format(time, "%Y"),
            month = format(time, "%m"),
-           day = format(time, "%a"),
+           day = format(time, "%d"),
            hour = format(time, "%H"),
-           minute = format(time, "%M")) %>%
-    select(origin_id, destination_id, actual_duration, year, month, day, hour, minute)
-})
-trip_data <- do.call("rbind", trip_data)
+           minute = format(time, "%M"),
+           weekday = ifelse(format(time, "%a") %in% c("Sat", "Sun"), "Weekend", "Weekday")) %>%
+    select(trip_id, origin_id, destination_id, actual_duration, time, year, month, day, hour, minute, weekday)
+}))
 ```
 
-Read in Google Maps estimates. See [here](https://github.com/llefebure/bike-sharing/blob/master/R/google-api-trip-estimates.R) for how these were retrieved.
+Through the Google Maps Directions API, I pull cycling estimates for every pair of stations in the same region.  See [here](https://github.com/llefebure/bike-sharing/blob/master/R/google-api-trip-estimates.R) for the full code that generates these numbers.
 
 ```{r}
 gmaps_estimates <- readRDS("../data/gmaps_trip_estimates.Rds")
 ```
 
-Merge:
+Next, I merge the trips data with the Google Maps estimates. Because some stations changed location, I need to make sure that each trip matches up with the correct estimate.
 
 ```{r}
-trip_data_with_est <- inner_join(trip_data, gmaps_estimates)
+trip_data_with_est <- inner_join(trip_data, gmaps_estimates) %>%
+  mutate(origin_date_match = as.Date(time) >= start_date_origin & 
+           as.Date(time) <= end_date_origin,
+         destination_date_match = as.Date(time) >= start_date_destination & 
+           as.Date(time) <= end_date_destination) %>%
+  filter(is.na(origin_date_match) | origin_date_match == TRUE, 
+         is.na(destination_date_match) | destination_date_match == TRUE) %>%
+  group_by(trip_id) %>%
+  arrange(origin_date_match, destination_date_match) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
 ```
 
 ```{r}
