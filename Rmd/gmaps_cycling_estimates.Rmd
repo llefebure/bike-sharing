@@ -1,17 +1,9 @@
 ---
-title: "Analyzing Trips in the Bay Area Bike Share"
+title: "Analyzing Trip Times in the Bay Area Bike Share"
 output: html_document
 ---
 
-During my summer travels, I visited many cities around the world with bike sharing systems. As someone who enjoys biking as a means of transport, the concept really appeals to me. Such systems encourage physical activity and can relieve congestion on other public transit options like busses and trams. They also offer another solution to the [Last Mile Problem](http://en.wikipedia.org/wiki/Last_mile_(transportation)), which refers to the question of how to get people from a transportation hub to their final destination.
-
-As an example, the terminus of the Caltrain in San Francisco is quite far from the Financial District, so a transfer to an alternative form of transportation is necessary for commuters destined for that area. I spent a summer making that exact commute. My solution to the problem involved taking my bike with me on the train, but there is limited space for that. For a commuter who does not want to commit to carrying their bike on the crowded train everyday, having the option of picking up a shared bike at the station to go the last mile is enticing.
-
-Bike sharing systems are not without flaws. The most obvious problem is that with enough demand, all of the bikes at your preferred pickup station could be gone. Another (potentially more frustrating) issue is that your preferred dropoff station could be full. Bike sharing systems usually employ people to drive around and rebalance the stock at different stations.
-
-I like riding my bike -- not only for exercise, but also for transportation whenever possible. I often use Google Maps to find a good route, but sometimes their cycling directions seem a bit off. I have always wondered how accurate these estimates actually are.
-
-Recently, I have been experimenting with data provided by the [Bay Area Bike Share](http://www.bayareabikeshare.com/open-data) (BABS) system. I think bike sharing networks are a cool concept, so this has been a fun side project. This data set contains individual trip data complete with origin, destination, and trip duration, so it is perfect for investigating my question.
+I like riding my bike for transportation whenever possible. I often use Google Maps to find a good route, but sometimes their cycling directions seem a bit off. I have always wondered how accurate these estimates actually are for the average cyclist. Recently, I have been experimenting with data from the Bay Area Bike Share (BABS) system -- a network of shared bikes docked at stations scattered around the Bay Area. In this analysis, I will compare actual trip times from the BABS to Google Maps estimates with the goal of better understanding the accuracy of those estimates.
 
 ```{r echo=FALSE, eval=FALSE}
 setwd("~/Documents/Projects/BikeShare/Rmd")
@@ -26,9 +18,14 @@ library(ggplot2)
 source("../R/helpers.R")
 ```
 
-```{r warning=FALSE}
+## Data
+
+The BABS makes trip data publically available [here](http://www.bayareabikeshare.com/open-data). It consists of individual records for 669,959 trips made between 8/31/2013 and 8/31/2015 complete with information like origin, destination, duration, start time, and more.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
 paths <- getFilePaths()
 trip_data <- do.call("rbind", lapply(paths$trip, function(fn) {
+  date_fmt <- ifelse(grepl("201402", fn), "%m/%d/%y %H:%M", "%m/%d/%Y %H:%M")
   read_csv(fn) %>%
     rename(origin_id = `Start Terminal`,
            destination_id = `End Terminal`,
@@ -37,7 +34,7 @@ trip_data <- do.call("rbind", lapply(paths$trip, function(fn) {
            subscription = `Subscriber Type`,
            actual_duration = Duration,
            trip_id = `Trip ID`) %>%
-    mutate(time = as.POSIXct(`Start Date`, format = "%m/%d/%Y %H:%M"),
+    mutate(time = as.POSIXct(`Start Date`, format = date_fmt),
            year = format(time, "%Y"),
            month = format(time, "%m"),
            day = format(time, "%d"),
@@ -49,15 +46,13 @@ trip_data <- do.call("rbind", lapply(paths$trip, function(fn) {
 }))
 ```
 
-Through the Google Maps Directions API, I pull cycling estimates for every pair of stations in the same region.  See [here](https://github.com/llefebure/bike-sharing/blob/master/R/google-api-trip-estimates.R) for the full code that generates these numbers.
+There are five different cities serviced by the BABS: San Francisco, Redwood City, Palo Alto, Mountain View, and San Jose. Through the Google Maps Directions API, I pull cycling estimates for every pair of stations in the same city. See [here](https://github.com/llefebure/bike-sharing/blob/master/R/google-api-trip-estimates.R) for the full code that generates those numbers. While it is possible to take a bike between cities, the vast majority of trips happen within one. In addition, some stations changed location, so certain routes affected by this have multiple estimates with corresponding date ranges.
 
-```{r}
+```{r echo=FALSE}
 gmaps_estimates <- readRDS("../data/gmaps_trip_estimates.Rds")
 ```
 
-Next, I merge the trips data with the Google Maps estimates. Because some stations changed location, I need to make sure that each trip matches up with the correct estimate.
-
-```{r}
+```{r message=FALSE, echo=FALSE}
 trip_data_with_est <- inner_join(trip_data, gmaps_estimates) %>%
   mutate(origin_date_match = as.Date(time) >= start_date_origin & 
            as.Date(time) <= end_date_origin,
@@ -70,26 +65,89 @@ trip_data_with_est <- inner_join(trip_data, gmaps_estimates) %>%
   filter(row_number() == 1) %>%
   ungroup() %>%
   rename(gmaps_duration = duration, gmaps_distance = distance) %>%
+  mutate(duration_diff = actual_duration - gmaps_duration) %>%
   select(origin_id, destination_id, origin_station, destination_station, origin_latlong, 
-         destination_latlong, subscription, actual_duration, gmaps_duration, gmaps_distance, 
-         year, month, day, hour, minute)
+         destination_latlong, subscription, actual_duration, gmaps_duration, duration_diff,
+         gmaps_distance, year, month, day, weekday, hour, minute)
 ```
 
-```{r}
-summary(trip_data_with_est$actual_duration - trip_data_with_est$duration)
+```{r echo=FALSE}
+trip_data_with_est <- trip_data_with_est %>%
+  filter(origin_id != destination_id)
 ```
 
-```{r}
-ggplot(trip_data_with_est, aes(actual_duration - duration)) + geom_histogram() + xlim(c(-800, 800))
+## Analysis
+
+To get an idea of the average expected length of a trip in the BABS, the relationship between the cycling distance (in meters) of a trip and its expected duration (in seconds) as reported by Google Maps is plotted below for each route. There is clearly a strong linear trend with some heteroskedasticity. As trips increase in distance, the variance of their expected duration increases. Trips range in distance from about 50 meters to 6,000 meters and in duration from about 10 seconds to 23 minutes.
+
+```{r echo=FALSE, warning=FALSE}
+ggplot(gmaps_estimates, aes(distance, duration)) + 
+  geom_point() + 
+  labs(x = "Distance (m)",
+       y = "Duration (s)",
+       title = "Routes in the BABS")
 ```
 
-```{r}
-a<-trip_data_with_est %>% 
-  group_by(origin_id, destination_id, subscription) %>% 
-  summarize(avg_len = mean(actual_duration), sd_len = sd(actual_duration), cnt = n()) %>% 
-  arrange(origin_id, destination_id)
-b<-inner_join(filter(a, subscription == "Customer"), 
-           filter(a, subscription == "Subscriber"), 
-           by = c("origin_id", "destination_id")) %>%
-  mutate(diff = avg_len.x - avg_len.y)
+My ultimate goal is to compare actual trip times with Google Maps estimates. Therefore, I need to filter out trips that were not continuous point to point journeys. For example, it is possible that tourists stop several times to take photos before reaching their destination. Trips such as these could very easily skew the analysis. A quick look at the distribution of trip times reveals at least one glaringly obvious outlier.
+
+```{r echo=FALSE}
+kable(data.frame(t(as.matrix(summary(trip_data_with_est$actual_duration)))))
 ```
+
+Clearly nobody made a continuous trip of over 17,000,000 seconds, which equates to approximately 200 days. However, finding the not so obvious discontinuous trips is more challenging. The BABS imposes overage charges on any trip that lasts longer than 30 minutes, so the system is certainly setup to discourage those longer, discontinuous journeys. After all, the goal of the system is to make bikes available when they are idle. As a first step, I will filter out all trips longer than 30 minutes.
+
+```{r echo=FALSE}
+trip_data_with_est <- trip_data_with_est %>%
+  filter(actual_duration <= 1800)
+```
+
+Among those trips shorter than 30 minutes, the difference between the actual and estimated time is plotted below. The histogram looks as we would expect. It is centered around zero and skewed off to the right. A trip can be arbitrarily long but can only be so fast.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(trip_data_with_est, aes(duration_diff)) + 
+  geom_histogram() + 
+  labs(title = "Comparison of Trip Duration with Google Maps Estimate",
+       x = "Actual Duration Minus Google Maps Estimate",
+       y = "Count of Trips")
+```
+
+There is an additional piece of important information attached to each trip. From the subscriber type, we can make educated inferences about the trip. Subscribers are those with annual or 30 day memberships, and customers are those with 24 hour or 3 day passes. I expect that subscribers are those that use the system for commuting and transportation exclusively, while customers can include tourists who use the system for exploring the area. Plotted below is the same histogram as above, but stacked by the subscription type. As expected, customers ride slower. I filter out these trips.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(trip_data_with_est, aes(x=duration_diff, fill=subscription)) + 
+  geom_histogram() + 
+  labs(title = "Comparison of Trip Duration with Google Maps Estimate",
+       x = "Actual Duration Minus Google Maps Estimate",
+       y = "Count of Trips")
+```
+
+```{r echo=FALSE}
+trip_data_with_est <- trip_data_with_est %>%
+  filter(subscription == "Subscriber")
+```
+
+```{r echo=FALSE}
+trip_data_with_est <- trip_data_with_est %>%
+  mutate(duration_diff_prop = duration_diff/gmaps_duration)
+```
+
+Trips vary in length significantly. A one minute difference in a five minute trip is much different than a one minute difference in a twenty minute trip, so the above graphs do not show the full picture. Plotted below is a histogram of the proportion difference.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(trip_data_with_est, aes(x=duration_diff_prop)) + 
+  geom_histogram() + 
+  labs(title = "Comparison of Trip Duration with Google Maps Estimate",
+       x = "Proportion Difference from Google Maps Estimate",
+       y = "Count of Trips") +
+  lims(x = c(-1, 2))
+```
+
+A fuller picture of this distribution is shown below. Some outliers were missed, but the distribution is remarkably symmetric. The median trip is just 3% longer than estimated. The extra few seconds it takes to check out a bike and gather your belongings before starting to ride could account for this.
+
+```{r echo=FALSE}
+kable(data.frame(t(as.matrix(summary(trip_data_with_est$duration_diff_prop)))))
+```
+
+## Conclusion
+
+Google Maps estimates seem to be quite good on average for routes in the Bay Area.
