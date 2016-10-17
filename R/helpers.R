@@ -1,7 +1,7 @@
 #' Retrieve paths for the relevant data files
 #' 
 #' @return a list containing full file paths under category names
-getFilePaths = function(){
+getFilePaths <- function(){
   dir <- "~/Documents/Projects/BikeShare/data/"
   prefixes <- c("201402", "201408", "201508")
   list(trip = paste0(dir, prefixes, "_trip_data.csv"),
