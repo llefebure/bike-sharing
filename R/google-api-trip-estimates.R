@@ -50,7 +50,7 @@ for (nm in names(changes)){
 station_pairs <- inner_join(stations, stations, by = "landmark") %>%
   filter(latlong.x != latlong.y) %>%
   select(station_id.x, station_id.y, latlong.x, latlong.y, 
-         start_date.x, start_date.y, end_date.x, end_date.y) %>%
+         start_date.x, start_date.y, end_date.x, end_date.y, landmark) %>%
   rename(origin_id = station_id.x, destination_id = station_id.y,
          origin_latlong = latlong.x, destination_latlong = latlong.y,
          start_date_origin = start_date.x, start_date_destination = start_date.y,
@@ -64,7 +64,7 @@ time_dist_pairs <- sapply(1:nrow(station_pairs), function(i) {
                 "&destination=", dll, "&mode=bicycling&key=", API_KEY)
   resp <- GET(url = url)
   r <- content(resp)
-  cat(paste(i, "of", nrow(station_pairs)))
+  cat(paste(i, "of", nrow(station_pairs), "\n"))
   c(r$routes[[1]]$legs[[1]]$duration$value, r$routes[[1]]$legs[[1]]$distance$value)
 })
 
