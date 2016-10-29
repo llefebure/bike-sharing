@@ -40,7 +40,7 @@ changes <- list("37.488501,-122.231061" = c(as.Date("2014-09-01"), as.Date("2014
                 "37.486725,-122.225551" = c(as.Date("2014-09-01"), as.Date("2014-10-22")),
                 "37.789625,-122.390264" = c(as.Date("2014-09-01"), as.Date("2015-02-05")),
                 "37.776377,-122.39607" = c(as.Date("2014-09-01"), as.Date("2015-03-11")),
-                "37.776377,-122.39607" = c(as.Date("2014-09-01"), as.Date("2015-03-11")))
+                "37.780356,-122.412919" = c(as.Date("2014-09-01"), as.Date("2015-02-12")))
 for (nm in names(changes)){
   stations$start_date[stations$latlong == nm] <- changes[[nm]][1]
   stations$end_date[stations$latlong == nm] <- changes[[nm]][2]
