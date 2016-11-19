@@ -38,17 +38,20 @@ getAllTripData <- function(paths = getFilePaths()) {
   return(trip_data)
 }
 
-#' Build the processed data set
+#' Build data set of counts of hourly arrivals and departures from trip data
 #' 
 #' @description Derive hourly arrivals and departures from the trip data
 #' @return tbl_df with the processed data set
-getProcessedTripData <- function(fn = "../data/processed_trips.Rds"){
-  if (!is.null(fn)) {
+getArrivalsDeparturesData <- function(fn = "~/Documents/Projects/BikeShare/data/processed_trips.Rds"){
+  
+  # if already exists, return it
+  if (file.exists(fn)) {
     return(readRDS(fn))
   }
   
   # read in and do some preprocessing on raw data files
   file_paths <- getFilePaths()
+  
   trip_data <- rbind(read_csv(file_paths$trip[2]),
                      read_csv(file_paths$trip[3]))
   weather_data <- rbind(read_csv(file_paths$weather[2]),
@@ -158,5 +161,6 @@ getProcessedTripData <- function(fn = "../data/processed_trips.Rds"){
   processed$weekday <- factor(processed$weekday)
   processed$hour <- factor(processed$hour)
   
+  saveRDS(processed, fn)
   return(processed)
 }

@@ -15,8 +15,8 @@ In this analysis, I experiment with using Poisson regression for predicting the 
 
 This task is important for two reasons. Users want to know how likely it is that there will be a bike at their preferred pickup station, and rebalancers need to know how they should distribute bikes to optimally handle future demand.
 
-```{r echo=FALSE, eval=FALSE}
-setwd("~/Documents/Projects/BikeShare/Rmd")
+```{r echo=FALSE}
+PATH <- "~/Documents/Projects/BikeShare/"
 ```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
@@ -27,7 +27,7 @@ library(knitr)
 library(skellam)
 library(ggplot2)
 library(AER)
-source("../R/helpers.R")
+source(paste0(PATH, "R/helpers.R"))
 ```
 
 ## Data
@@ -36,10 +36,10 @@ The Bay Area Bike Share program makes trip, station, weather, and station availa
 
 ### Building the Data Set
 
-I use `dplyr` to aggregate this trip data and strip out relevant features for training and testing. This data munging problem has its own challenges, and the full code for the `getProcessedTripData` function can be found [here](http://github.com/llefebure/bike-sharing/blob/master/R/helpers.R). In particular, I infer the number of arrivals and departures for each station at every hour of every day and append weather and station availability features. The full data set consists of eighteen months. I hold out the final three months of data for testing.
+I use `dplyr` to aggregate this trip data and strip out relevant features for training and testing. This data munging problem has its own challenges, and the full code for the `getArrivalsDeparturesData` function can be found [here](http://github.com/llefebure/bike-sharing/blob/master/R/helpers.R). In particular, I infer the number of arrivals and departures for each station at every hour of every day and append weather and station availability features. The full data set consists of eighteen months. I hold out the final three months of data for testing.
 
 ```{r warning=FALSE}
-full <- getProcessedTripData() %>%
+full <- getArrivalsDeparturesData() %>%
   filter(!is.na(bikes_available))
 train <- full %>% filter(year == "2014" | (year == "2015" & month < "06"))
 test <- full %>% filter(year == "2015" & month >= "06")
