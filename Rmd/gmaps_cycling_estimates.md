@@ -32,10 +32,6 @@ The BABS makes trip data publically available [here](http://www.bayareabikeshare
 trip_data <- getAllTripData()
 ```
 
-```
-## |============                                                                   |  15%    2 MB|========================                                                       |  31%    4 MB|=====================================                                          |  46%    7 MB|==================================================                             |  62%    9 MB|===============================================================                |  78%   12 MB|===========================================================================    |  94%   14 MB|================================================================================| 100%   15 MB
-```
-
 There are five different cities served by the system: San Francisco, Redwood City, Palo Alto, Mountain View, and San Jose. While it is possible to take a bike between cities, I filter those trips out because of their rarity and the likelihood that a trip from San Francisco to Palo Alto, for example, includes a stint on the Caltrain.
 
 Below is a histogram of the actual duration of these trips. It is cut off at 1,800 seconds (30 minutes), but there are some trips that take significantly longer. These outliers are dealt with later. The distribution is skewed off to the right as we would expect since a cyclist can take an arbitrarily long amount of time to complete their trip.
