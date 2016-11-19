@@ -36,7 +36,7 @@ There are five different cities served by the system: San Francisco, Redwood Cit
 
 Below is a histogram of the actual duration of these trips. It is cut off at 1,800 seconds (30 minutes), but there are some trips that take significantly longer. These outliers are dealt with later. The distribution is skewed off to the right as we would expect since a cyclist can take an arbitrarily long amount of time to complete their trip.
 
-```{r warning=FALSE, message=FALSE}
+```{r dist-trip-length, warning=FALSE, message=FALSE}
 ggplot(trip_data, aes(actual_duration)) +
   geom_histogram() +
   lims(x = c(0, 1800)) +
@@ -49,7 +49,7 @@ ggplot(trip_data, aes(actual_duration)) +
 
 Through the Google Maps Directions API, I pull cycling estimates for every pair of stations in the same city. See [here](https://github.com/llefebure/bike-sharing/blob/master/R/google-api-trip-estimates.R) for the full code that generates those numbers. In addition, some stations changed location, so certain routes affected by this have multiple estimates with corresponding date ranges.
 
-```{r }
+```{r}
 gmaps_estimates <- getGoogleMapsCyclingEstimates()
 gmaps_estimates <- gmaps_estimates %>%
   filter(origin_id != destination_id)
@@ -57,7 +57,7 @@ gmaps_estimates <- gmaps_estimates %>%
 
 The relationship between the cycling distance (in meters) of a trip and its expected duration (in seconds) as reported by Google Maps is plotted below for each route. There is clearly a strong linear trend with some heteroskedasticity. As trips increase in distance, the variance of their expected duration increases. Trips range in distance from about 50 meters to 6,000 meters and in duration from about 10 seconds to 23 minutes.
 
-```{r warning=FALSE}
+```{r gmaps-routes, warning=FALSE}
 ggplot(gmaps_estimates, aes(distance, duration, color=landmark)) + 
   geom_point(size=.4) + 
   labs(x = "Distance (m)",
@@ -67,7 +67,7 @@ ggplot(gmaps_estimates, aes(distance, duration, color=landmark)) +
 
 From this data, I infer the expected average cycling speed for each route by scaling the ratio of duration and time. This distribution is shown below. The average expected speed of a route is between 8 and 9 miles per hour.
 
-```{r warning=FALSE, message=FALSE}
+```{r gmaps-avg-speed, warning=FALSE, message=FALSE}
 ggplot(gmaps_estimates, aes((distance/duration)/1000*3600/1.609)) + 
   geom_histogram() + 
   labs(x = "Speed (mph)",
@@ -113,7 +113,7 @@ trip_data_with_est <- trip_data_with_est %>%
 
 There is an additional piece of important information attached to each trip -- the subscriber type. This tells us more about the rider. Subscribers are those with annual or 30 day memberships, and customers are those with 24 hour or 3 day passes. I expect that subscribers are those that use the system for mostly commuting and transportation (the trips we are interested in), while customers can include tourists who use the system for exploring the area. Plotted below is the distribution of the difference between a trip's actual time and its estimated time stacked by subscriber type. As expected, customers ride slower than subscribers. I filter out these trips as well.
 
-```{r message=FALSE}
+```{r duration-diff-segmented, message=FALSE}
 ggplot(trip_data_with_est, aes(x=duration_diff, fill=subscription)) + 
   geom_histogram() + 
   labs(title = "Comparison of Trip Duration with Google Maps Estimate",
@@ -121,7 +121,7 @@ ggplot(trip_data_with_est, aes(x=duration_diff, fill=subscription)) +
        y = "Count of Trips")
 ```
 
-```{r echo=FALSE}
+```{r}
 trip_data_with_est <- trip_data_with_est %>%
   filter(subscription == "Subscriber")
 ```
@@ -132,13 +132,13 @@ The remaining dataset now has all trips shorter than 30 minutes made by subscrib
 
 The distribution of the difference (in seconds) between the actual and estimated time of each trip is shown below. The median is just 8 seconds, suggesting that the Google Maps estimates are quite good. Despite the long right tail, the quartiles are perfectly symmetric as well -- the middle 50% of trips were within +/- 81 seconds of the median.
 
-```{r echo=FALSE}
+```{r}
 trip_diff <- data.frame(t(as.matrix(summary(trip_data_with_est$duration_diff))))
 colnames(trip_diff) <- c("Min", "First Quartile", "Median", "Mean", "Third Quartile", "Max")
 kable(trip_diff)
 ```
 
-```{r warning=FALSE, message=FALSE}
+```{r duration-diff, warning=FALSE, message=FALSE}
 ggplot(trip_data_with_est, aes(duration_diff)) + 
   geom_histogram() + 
   labs(title = "Comparison of Trip Duration with Google Maps Estimate",
@@ -160,7 +160,7 @@ colnames(trip_diff_prop) <- c("Min", "First Quartile", "Median", "Mean", "Third 
 kable(trip_diff_prop)
 ```
 
-```{r warning=FALSE, message=FALSE}
+```{r duration-diff-prop, warning=FALSE, message=FALSE}
 ggplot(trip_data_with_est, aes(x=duration_diff_prop)) + 
   geom_histogram() + 
   labs(title = "Comparison of Trip Duration with Google Maps Estimate",
@@ -190,7 +190,7 @@ p1 <- ggplot(trip_data_with_est, aes(factor(landmark), duration_diff_prop)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-```{r message=FALSE, warning=FALSE}
+```{r segmented-by-city, message=FALSE, warning=FALSE}
 p2 <- ggplot(trip_data_with_est, aes(factor(landmark), duration_diff)) + 
   geom_boxplot() +
   lims(y = c(-400, 500)) +
@@ -233,7 +233,7 @@ p1 <- ggplot(trip_data_with_est, aes(factor(quartile_bucket), duration_diff_prop
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-```{r message=FALSE, warning=FALSE}
+```{r segmented-by-distance, message=FALSE, warning=FALSE}
 p2 <- ggplot(trip_data_with_est, aes(factor(quartile_bucket), duration_diff)) + 
   geom_boxplot() +
   lims(y = c(-500, 500)) +

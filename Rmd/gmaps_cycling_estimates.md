@@ -46,7 +46,7 @@ ggplot(trip_data, aes(actual_duration)) +
        y = "Count of Trips")
 ```
 
-![plot of chunk unnamed-chunk-4](figure/unnamed-chunk-4-1.png)
+![plot of chunk dist-trip-length](figure/dist-trip-length-1.png)
 
 ### Google Maps Estimates
 
@@ -70,7 +70,7 @@ ggplot(gmaps_estimates, aes(distance, duration, color=landmark)) +
        title = "Google Maps Routes")
 ```
 
-![plot of chunk unnamed-chunk-6](figure/unnamed-chunk-6-1.png)
+![plot of chunk gmaps-routes](figure/gmaps-routes-1.png)
 
 From this data, I infer the expected average cycling speed for each route by scaling the ratio of duration and time. This distribution is shown below. The average expected speed of a route is between 8 and 9 miles per hour.
 
@@ -83,7 +83,7 @@ ggplot(gmaps_estimates, aes((distance/duration)/1000*3600/1.609)) +
        title = "Average Expected Speed by Route")
 ```
 
-![plot of chunk unnamed-chunk-7](figure/unnamed-chunk-7-1.png)
+![plot of chunk gmaps-avg-speed](figure/gmaps-avg-speed-1.png)
 
 
 ```r
@@ -141,15 +141,27 @@ ggplot(trip_data_with_est, aes(x=duration_diff, fill=subscription)) +
        y = "Count of Trips")
 ```
 
-![plot of chunk unnamed-chunk-11](figure/unnamed-chunk-11-1.png)
+![plot of chunk duration-diff-segmented](figure/duration-diff-segmented-1.png)
 
 
+```r
+trip_data_with_est <- trip_data_with_est %>%
+  filter(subscription == "Subscriber")
+```
 
 ## Analysis
 
 The remaining dataset now has all trips shorter than 30 minutes made by subscribers. In the analysis that follows, I work with this dataset and explore descriptive statistics, particularly the median. Because the distribution of trip times is heavily skewed to the right and some outliers inevitably remain, the median is a more meaningful gauge of the "average" or "typical" trip than the mean itself.
 
 The distribution of the difference (in seconds) between the actual and estimated time of each trip is shown below. The median is just 8 seconds, suggesting that the Google Maps estimates are quite good. Despite the long right tail, the quartiles are perfectly symmetric as well -- the middle 50% of trips were within +/- 81 seconds of the median.
+
+
+```r
+trip_diff <- data.frame(t(as.matrix(summary(trip_data_with_est$duration_diff))))
+colnames(trip_diff) <- c("Min", "First Quartile", "Median", "Mean", "Third Quartile", "Max")
+kable(trip_diff)
+```
+
 
 
 |  Min| First Quartile| Median|  Mean| Third Quartile|  Max|
@@ -166,7 +178,7 @@ ggplot(trip_data_with_est, aes(duration_diff)) +
   lims(x = c(-400, 1000))
 ```
 
-![plot of chunk unnamed-chunk-14](figure/unnamed-chunk-14-1.png)
+![plot of chunk duration-diff](figure/duration-diff-1.png)
 
 However, trips vary in length significantly. A one minute difference for a five minute trip is much different than a one minute difference for a twenty minute trip. Instead of looking at the difference between the actual and estimated times, I look at this difference scaled by the expected time below. Some outliers were missed, but the distribution is still remarkably symmetric. The median trip is just 2% longer than estimated.
 
@@ -199,7 +211,7 @@ ggplot(trip_data_with_est, aes(x=duration_diff_prop)) +
   lims(x = c(-1, 2))
 ```
 
-![plot of chunk unnamed-chunk-17](figure/unnamed-chunk-17-1.png)
+![plot of chunk duration-diff-prop](figure/duration-diff-prop-1.png)
 
 Next, I segment the trips by city. Note that the vast majority of trips were in San Francisco and that the median trip there was even more precise at just under 1% or 3 seconds slower than the Google Maps estimate. In the other cities, the accuracy is not nearly as good, but there are far fewer trips to make conclusions from.
 
@@ -245,7 +257,7 @@ grid.arrange(p1, p2, ncol=2, top = "Segmented By City", bottom = "City",
              left = "Difference From Estimate")
 ```
 
-![plot of chunk unnamed-chunk-20](figure/unnamed-chunk-20-1.png)
+![plot of chunk segmented-by-city](figure/segmented-by-city-1.png)
 
 Finally, I segment the trips by their expected distance to determine whether the accuracy of estimates differs between shorter and longer trips. The 0%-25% bucket contains, for example, all trips for which the Google Maps estimate was among the shortest quarter. The plots below show that the estimates for shorter trips are slightly too fast and those for longer trips are a bit slow. Two factors that could account for this difference are:
 
@@ -303,7 +315,7 @@ grid.arrange(p1, p2, ncol=2, top = "Segmented by Expected Trip Distance",
              bottom = "Quartile Bucket", left = "Difference From Estimate")
 ```
 
-![plot of chunk unnamed-chunk-24](figure/unnamed-chunk-24-1.png)
+![plot of chunk segmented-by-distance](figure/segmented-by-distance-1.png)
 
 ## Conclusion
 
