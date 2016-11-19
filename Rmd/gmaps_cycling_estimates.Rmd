@@ -8,7 +8,7 @@ I like riding my bike for transportation whenever possible, and like many others
 Recently, I have been experimenting with data from the Bay Area Bike Share (BABS) system -- a network of shared bikes docked at stations scattered around the Bay Area. In this analysis, I compare actual trip times from the BABS to Google Maps time estimates to investigate their accuracy.
 
 ```{r echo=FALSE, eval=FALSE}
-setwd("~/Documents/Projects/BikeShare/Rmd")
+PATH <- "~/Documents/Projects/BikeShare/"
 ```
 
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
@@ -18,7 +18,8 @@ library(stringr)
 library(knitr)
 library(gridExtra)
 library(ggplot2)
-source("../R/helpers.R")
+source(paste0(PATH, "R/helpers.R"))
+source(paste0(PATH, "R/google-api-trip-estimates.R"))
 ```
 
 ## Data
@@ -28,27 +29,7 @@ source("../R/helpers.R")
 The BABS makes trip data publically available [here](http://www.bayareabikeshare.com/open-data). It consists of individual records for 669,959 trips made between 8/31/2013 and 8/31/2015 complete with information like origin, destination, duration, start time, and more.
 
 ```{r warning=FALSE, message=FALSE, echo=FALSE}
-paths <- getFilePaths()
-trip_data <- do.call("rbind", lapply(paths$trip, function(fn) {
-  date_fmt <- ifelse(grepl("201402", fn), "%m/%d/%y %H:%M", "%m/%d/%Y %H:%M")
-  read_csv(fn) %>%
-    rename(origin_id = `Start Terminal`,
-           destination_id = `End Terminal`,
-           origin_station = `Start Station`,
-           destination_station = `End Station`,
-           subscription = `Subscriber Type`,
-           actual_duration = Duration,
-           trip_id = `Trip ID`) %>%
-    mutate(time = as.POSIXct(`Start Date`, format = date_fmt),
-           year = format(time, "%Y"),
-           month = format(time, "%m"),
-           day = format(time, "%d"),
-           hour = format(time, "%H"),
-           minute = format(time, "%M"),
-           weekday = ifelse(format(time, "%a") %in% c("Sat", "Sun"), "Weekend", "Weekday")) %>%
-    select(trip_id, origin_id, destination_id, origin_station, destination_station, subscription,
-           actual_duration, time, year, month, day, hour, minute, weekday)
-}))
+trip_data <- getAllTripData()
 ```
 
 There are five different cities served by the system: San Francisco, Redwood City, Palo Alto, Mountain View, and San Jose. While it is possible to take a bike between cities, I filter those trips out because of their rarity and the likelihood that a trip from San Francisco to Palo Alto, for example, includes a stint on the Caltrain.
@@ -69,7 +50,7 @@ ggplot(trip_data, aes(actual_duration)) +
 Through the Google Maps Directions API, I pull cycling estimates for every pair of stations in the same city. See [here](https://github.com/llefebure/bike-sharing/blob/master/R/google-api-trip-estimates.R) for the full code that generates those numbers. In addition, some stations changed location, so certain routes affected by this have multiple estimates with corresponding date ranges.
 
 ```{r echo=FALSE}
-gmaps_estimates <- readRDS("../data/gmaps_trip_estimates.Rds")
+gmaps_estimates <- getGoogleMapsCyclingEstimates()
 gmaps_estimates <- gmaps_estimates %>%
   filter(origin_id != destination_id)
 ```

@@ -1,13 +1,41 @@
 #' Retrieve paths for the relevant data files
 #' 
+#' @param dir, directory where the raw data files live
 #' @return a list containing full file paths under category names
-getFilePaths <- function(){
-  dir <- "~/Documents/Projects/BikeShare/data/"
+getFilePaths <- function(dir = "~/Documents/Projects/BikeShare/data/"){
   prefixes <- c("201402", "201408", "201508")
   list(trip = paste0(dir, prefixes, "_trip_data.csv"),
        status = paste0(dir, prefixes, "_status_data.csv"),
        station = paste0(dir, prefixes, "_station_data.csv"),
        weather = paste0(dir, prefixes, "_weather_data.csv"))
+}
+
+#' Get all trip data
+#' 
+#' @param paths, result of a call to getFilePaths
+#' @return dataframe with all trip data
+getAllTripData <- function(paths = getFilePaths()) {
+  trip_data <- do.call("rbind", lapply(paths$trip, function(fn) {
+    date_fmt <- ifelse(grepl("201402", fn), "%m/%d/%y %H:%M", "%m/%d/%Y %H:%M")
+    read_csv(fn) %>%
+      rename(origin_id = `Start Terminal`,
+             destination_id = `End Terminal`,
+             origin_station = `Start Station`,
+             destination_station = `End Station`,
+             subscription = `Subscriber Type`,
+             actual_duration = Duration,
+             trip_id = `Trip ID`) %>%
+      mutate(time = as.POSIXct(`Start Date`, format = date_fmt),
+             year = format(time, "%Y"),
+             month = format(time, "%m"),
+             day = format(time, "%d"),
+             hour = format(time, "%H"),
+             minute = format(time, "%M"),
+             weekday = ifelse(format(time, "%a") %in% c("Sat", "Sun"), "Weekend", "Weekday")) %>%
+      select(trip_id, origin_id, destination_id, origin_station, destination_station, subscription,
+             actual_duration, time, year, month, day, hour, minute, weekday)
+  }))
+  return(trip_data)
 }
 
 #' Build the processed data set

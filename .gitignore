@@ -2,3 +2,4 @@ data/
 R/config.R
 .Rhistory
 .DS_store
+Rmd/*.html
