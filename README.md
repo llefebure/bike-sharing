@@ -17,7 +17,7 @@ The end result is two clean dataframes, one for stations and one for trips. My f
 
 ## Analysis
 
-The prepared data contains a lot of interesting information about how and when people use the BABS, so I explore various questions related to it. See below for some high level descriptions of these questions or visit the Rmd directory to look at the actual analysis.
+The prepared data contains a lot of interesting information about how and when people use the BABS, so I explore various questions related to it. See below for some high level descriptions of these questions or take a look at the md files in the Rmd directory to see the actual analysis.
 
 ### Comparing Trip Times in the BABS to Google Maps Cycling Estimates
 By hitting the Google Maps Directions API, I can get cycling duration and distance estimates for all station pairs by passing the lat/long coordinates of the origin and destination. Once I have this information, I compare these estimates with the true trip duration. This produces some interesting insight into the accuracy of the Google Maps estimates.
