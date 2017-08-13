@@ -9,7 +9,7 @@ The analysis in this repository is organized as follows. General data cleaning a
 The BABS provides data on trips and stations which I make use of in this project. The trip data has records of trips (origin station, destination station, start time, end time, etc.) and information about stations (lat/long coordinates, name, capacity, etc.). It is separated out into several files (different CSVs for different time windows) and accompanied by READMEs that have important amendments hidden in text, so the first step is to unify this data. Some challenges that I encountered during this task are:
 
 * Different date formats across files
-    * I used lubridate to resolve this.
+    * Using lubridate makes it relatively easy to resolve this issue. 
 * Stations moved locations and changed names at various times
     * This wasn't reflected in the data -- only in the README -- so I had to augment the station data with the different station variants. At a high level, my solution requires that when joining a trip to its origin or destination station, both the station id and timestamp are necessary for retrieving the proper station variant.
 
