@@ -3,3 +3,4 @@ R/config.R
 .Rhistory
 .DS_store
 Rmd/*.html
+.Rproj.user
