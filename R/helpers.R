@@ -1,9 +1,13 @@
+library(dplyr)
+library(readr)
+library(lubridate)
+
 #' Retrieve paths for the relevant data files
 #' 
 #' @param dir, directory where the raw data files live
 #' @return a list containing full file paths under category names
 getFilePaths <- function(dir = "~/Documents/Projects/BikeShare/data/"){
-  prefixes <- c("201402", "201408", "201508")
+  prefixes <- c("201402", "201408", "201508", "201608")
   list(trip = paste0(dir, prefixes, "_trip_data.csv"),
        status = paste0(dir, prefixes, "_status_data.csv"),
        station = paste0(dir, prefixes, "_station_data.csv"),
@@ -12,9 +16,16 @@ getFilePaths <- function(dir = "~/Documents/Projects/BikeShare/data/"){
 
 #' Get all trip data
 #' 
-#' @param paths, result of a call to getFilePaths
 #' @return dataframe with all trip data
-getAllTripData <- function(paths = getFilePaths()) {
+getAllTripData <- function(file.name = "data/all_trips.Rds") {
+  
+  # if file already exists, load from file
+  if(file.exists(file.name)){
+    all.trips <- readRDS(file.name)
+    return(all.trips)
+  }
+  
+  paths = getFilePaths()
   trip_data <- do.call("rbind", lapply(paths$trip, function(fn) {
     date_fmt <- ifelse(grepl("201402", fn), "%m/%d/%y %H:%M", "%m/%d/%Y %H:%M")
     read_csv(fn) %>%
@@ -38,129 +49,101 @@ getAllTripData <- function(paths = getFilePaths()) {
   return(trip_data)
 }
 
-#' Build data set of counts of hourly arrivals and departures from trip data
+#' Get Station Data
 #' 
-#' @description Derive hourly arrivals and departures from the trip data
-#' @return tbl_df with the processed data set
-getArrivalsDeparturesData <- function(fn = "~/Documents/Projects/BikeShare/data/processed_trips.Rds"){
+#' @return Retrieves station data
+getAllStationData <- function() {
   
-  # if already exists, return it
-  if (file.exists(fn)) {
-    return(readRDS(fn))
-  }
+  paths <- getFilePaths()
   
-  # read in and do some preprocessing on raw data files
-  file_paths <- getFilePaths()
-  
-  trip_data <- rbind(read_csv(file_paths$trip[2]),
-                     read_csv(file_paths$trip[3]))
-  weather_data <- rbind(read_csv(file_paths$weather[2]),
-                        read_csv(file_paths$weather[3]))
-  status_data <- rbind(read_csv(file_paths$status[2]),
-                       read_csv(file_paths$status[3])) %>%
-    filter(format(time, "%M") == "00") %>%
-    mutate(year = format(time, "%Y"),
-           month = format(time, "%m"),
-           day = format(time, "%d"),
-           hour = format(time, "%H")) %>%
-    select(station_id, bikes_available, docks_available, year, month, day, hour)
-  station_data <- rbind(read_csv(file_paths$station[2]),
-                        read_csv(file_paths$station[3])) %>%
-    select(station_id, landmark) %>%
-    group_by(station_id, landmark) %>%
+  stations <- do.call("rbind", lapply(paths$station, read_csv)) %>%
+    filter(!is.na(station_id)) %>%
+    group_by(station_id, name, lat, long, dockcount, landmark, installation) %>%
     filter(row_number() == 1) %>%
-    ungroup()
-  station_data$Zip <- sapply(station_data$landmark, function(l) {
-    if (l == "San Francisco") 94107
-    else if (l == "Redwood City") 94063
-    else if (l == "Palo Alto") 94301
-    else if (l == "Mountain View") 94041
-    else if (l == "San Jose") 95113
-  })
+    ungroup() %>%
+    arrange(station_id, lat, long) %>%
+    mutate(start_date = NA, end_date = NA)
   
-  # add derived date fields to the trip data
-  trip_data <- trip_data %>% 
-    mutate(s.time = as.POSIXct(`Start Date`, format = "%m/%d/%Y %H:%M"),
-           s.year = format(s.time, "%Y"),
-           s.month = format(s.time, "%m"),
-           s.day = format(s.time, "%d"),
-           s.dow = format(s.time, "%a"),
-           s.hour = format(s.time, "%H"),
-           s.weekday = ifelse(format(s.time, "%u") < 6, "Weekday", "Weekend"),
-           e.time = as.POSIXct(`End Date`, format = "%m/%d/%Y %H:%M"),
-           e.year = format(e.time, "%Y"),
-           e.month = format(e.time, "%m"),
-           e.day = format(e.time, "%d"),
-           e.dow = format(e.time, "%a"),
-           e.hour = format(e.time, "%H"),
-           e.weekday = ifelse(format(e.time, "%u") < 6, "Weekday", "Weekend"))
+  stations <- makeStationUpdates(stations)
   
-  # pull out departures and arrivals
-  departures <- trip_data %>%
-    group_by(`Start Terminal`, s.year, s.month, s.day, s.dow, s.hour, s.weekday) %>%
-    summarize(departures = n()) %>%
-    ungroup()
-  arrivals <- trip_data %>%
-    group_by(`End Terminal`, e.year, e.month, e.day, e.dow, e.hour, e.weekday) %>%
-    summarize(arrivals = n()) %>%
-    ungroup()
+  stations <- stations %>%
+    mutate(latlong = paste(lat, long, sep = ","))
   
-  # rename columns to match for joining
-  colnames(departures) <- c("station_id", "year", "month", "day", 
-                            "dow", "hour", "weekday", "departures")
-  colnames(arrivals) <- c("station_id", "year", "month", "day", 
-                          "dow", "hour", "weekday", "arrivals")
+  return(stations)
   
-  # join to combine arrivals and departures columns into one df
-  processed <- full_join(arrivals, departures)
+}
+
+#' Make updates to stations
+#'
+#' @return updated stations
+makeStationUpdates <- function(stations){
+  # Conflict Resolution (from READMEs):
   
-  # need to pad with rows for which there were zero arrivals and departures, so
-  # we first need to get a grid with all combinations of station_id, year, month, day, etc.
-  # I use the join_key = "" to simulate Cartesian product
-  date_range <- tbl_df(data.frame(date = seq.Date(from = as.Date("2014-03-01"), 
-                                                  to = as.Date("2015-08-31"), 
-                                                  by = 1))) %>%
-    mutate(year = format(date, "%Y"),
-           month = format(date, "%m"),
-           day = format(date, "%d"),
-           dow = format(date, "%a"),
-           weekday = ifelse(format(date, "%u") < 6, "Weekday", "Weekend"),
-           join_key = "") %>%
-    full_join(data.frame(station_id = unique(processed$station_id), join_key = "")) %>%
-    full_join(data.frame(hour = str_pad(as.character(0:23), width = 2, side = "left", pad = "0"), 
-                         join_key = "")) %>%
-    select(station_id, year, month, day, dow, hour, weekday)
+  # Station 23: From 9/1/14 – 10/22/14: This station was located at (37.488501, -122.231061).
+  # Station 25: From 9/1/14 – 10/22/14: This station was located at (37.486725, -122.225551). It was previously named “Broadway at Main.”
+  # Station 49: From 9/1/14 - 2/5/15: This station was located at (37.789625, -122.390264). 
+  # Station 69: From 9/1/14 – 3/11/15: This station was located at (37.776377,-122.39607). 
+  # Station 72: Moved twice. From 9/1/14 – 2/12/15, this station was located at (37.780356, -122.412919). From 2/13/15 to 6/3/15, the station was located at (37.780353, -122.41226).
+  # Station 80: On 9/1/14, this station changed names from "San Jose Government Center" to "Santa Clara County Civic Center." It did not move.
   
-  # join date grid with processed df
-  processed <- left_join(date_range, processed)
+  updates <- data.frame(matrix(c(23,37.488501,-122.231061,"9/1/14","10/22/14",
+                                 25,37.486725,-122.225551,"9/1/14","10/22/14",
+                                 49,37.789625,-122.390264,"9/1/14","2/5/15",
+                                 69,37.776377,-122.39607,"9/1/14","3/11/15",
+                                 72,37.780356,-122.412919,"9/1/14","2/12/15"),
+                               nrow = 5, ncol = 5, byrow = T), stringsAsFactors = F)
+  colnames(updates) <- c("station_id", "lat", "long", "start_date_update", "end_date_update")
+  updates <- updates %>% mutate(station_id = as.integer(station_id),
+                                lat = as.double(lat),
+                                long = as.double(long),
+                                start_date_update = mdy(start_date_update),
+                                end_date_update = mdy(end_date_update))
+  stations <- stations %>% 
+    left_join(updates, by = c("station_id", "lat", "long")) %>%
+    mutate(start_date = start_date_update, end_date = end_date_update) %>%
+    select(station_id, name, lat, long, dockcount, landmark, installation,
+           start_date, end_date)
   
-  # outer joins fill with NA's, so we need to convert these to 0's
-  processed[is.na(processed)] = 0
+  stations$start_date[stations$name == "Santa Clara County Civic Center"] <- mdy("9/1/14")
   
-  # add column for net change
-  processed <- mutate(processed, net = arrivals - departures)
+  s72_add <- stations %>% 
+    filter(station_id == 72 & is.na(start_date)) %>%
+    mutate(lat = 37.780353, long = -122.41226, 
+           start_date = mdy("2/13/15"), end_date = mdy("6/3/15"))
   
-  # add zips to join with weather data
-  processed <- inner_join(processed, station_data)
+  # Station 21: On 9/16/15, this station was renamed from "Franklin at Maple" to "Sequoia Hospital" and moved to (37.479303,-122.253755)
+  # Station 26: On 9/16/15, this station was renamed from "Redwood City Medical Center" to "Kaiser Hospital" and moved to (37.489704,-122.224728)
+  # Station 30: On 9/28/15, this station was renamed from "Evelyn Park and Ride" to "Middlefield Light Rail Station" and moved to (37.395337,-122.052476)
+  # Station 33: On 9/16/15, this station was renamed from "Rengstorff Avenue / California Street" to "Charleston Park/ North Bayshore Area" and moved to (37.420909,-122.080623)
+  # Station 73: Moved twice. From 3/14/16 – 5/19/16, this station was located at (37.797746, -122.407073). From 5/19/16 to 8/31/16, the station was located at (37.7979, -122.405942). The station name stayed the same for all moves. 
+  # Station 83: On 9/16/15, this station was renamed from "Mezes Park" to "Mezes" and moved to (37.491405,-122.233051)
   
-  # add derived date fields to weather data
-  weather_data <- weather_data %>% 
-    mutate(time = as.POSIXct(PDT, format = "%m/%d/%Y"),
-           year = format(time, "%Y"),
-           month = format(time, "%m"),
-           day = format(time, "%d")) %>%
-    select(year, month, day, Zip, `Mean TemperatureF`)
+  s21_add <- stations %>% 
+    filter(station_id == 21) %>%
+    mutate(name = "Sequoia Hospital", lat = 37.479303, 
+           long = -122.253755, start_date = mdy("9/16/15"))
   
-  # append weather info
-  processed <- inner_join(processed, weather_data)
+  s26_add <- stations %>% 
+    filter(station_id == 26) %>%
+    mutate(name = "Kaiser Hospital", lat = 37.489704, 
+           long = -122.224728, start_date = mdy("9/16/15"))
   
-  # add status data
-  processed <- full_join(processed, status_data)
+  stations$start_date[stations$name == "Middlefield Light Rail Station"] <- mdy("9/28/15")
+  stations$start_date[stations$name == "Charleston Park/ North Bayshore Area"] <- mdy("9/16/15")
+  stations$start_date[stations$lat == 37.7979 & stations$long == -122.405942] <- mdy("5/19/16")
   
-  # change to factors
-  processed$weekday <- factor(processed$weekday)
-  processed$hour <- factor(processed$hour)
+  s73_add <- stations %>% 
+    filter(station_id == 73 & is.na(start_date)) %>%
+    mutate(lat = 37.797746, long = -122.407073, 
+           start_date = mdy("3/14/16"), end_date = mdy("5/18/16"))
   
-  saveRDS(processed, fn)
-  return(processed)
+  s83_add <- stations %>% 
+    filter(station_id == 83) %>%
+    mutate(name = "Mezes", lat = 37.491405, long = -122.233051, 
+           start_date = mdy("9/16/15"))
+  
+  stations <- rbind(stations, s72_add, s21_add, s26_add, s73_add, s83_add)
+  
+  return(stations)
+  
 }
