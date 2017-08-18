@@ -1,0 +1,197 @@
+---
+title: "Commuters in the Bay Area Bike Share System"
+output: html_document
+---
+
+I recently finished reading a book called [How Cycling Can Save the World](https://www.amazon.com/How-Cycling-Can-Save-World/dp/0143111779) by Peter Walker. As a part-time bike commuter, a lot of the material in the book resonated with me such as the health and societal benefits of a population that cycles regularly and the need for better bike infrastructure to make that happen. One component of a more bike friendly city is a bike share program. I was curious about how much of the Bay Area's own system's usage is by commuters, so in this post, I look into its data and focus in on two observations that suggest that this number is significant.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+library(dplyr)
+library(readr)
+library(stringr)
+library(knitr)
+library(tidyr)
+library(lubridate)
+library(grid)
+library(gridExtra)
+library(ggplot2)
+library(ggthemes)
+library(ggfortify)
+source("~/Documents/Projects/BikeShare/R/helpers.R")
+```
+
+### The Bay Area Bike Share
+
+Bike share systems have been rolled out in many cities across the United States and the world to mixed success, and they play a role in normalizing cycling as a viable public transit and commute option. Here in the Bay Area, we have the Bay Area Bike Share (BABS) which was rolled out in 2013. Riders can purchase a single day or three day pass (called Customers) or an annual pass (called Subscribers) for use of the bikes. They pay an additional overage charge for trips taking longer than thirty minutes, so continuous point to point journeys are incentivized as opposed to, for example, long discontinuous sightseeing trips.
+
+The BABS lags behind other major cities in terms of both usage and capacity. It has had a presence in five cities along the peninsula -- San Francisco, San Jose, Redwood City, Palo Alto, and Mountain View -- but the latter three have all been discontinued due to low usage. However, there is [hope](http://www.sfchronicle.com/business/networth/article/SF-bike-share-program-gathering-speed-with-burst-10976162.php) with new investment coming and the Bay Area's amenable climate and active community.
+
+The BABS makes data publically available [here](http://www.bayareabikeshare.com/open-data). This includes individual records for nearly a million trips made between 8/31/2013 and 8/31/2016, complete with information like origin, destination, duration, start time, and more. For this analysis, I look only at trips originating in SF.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+trip_data <- getAllTripData()
+station_data <- getAllStationData()
+trip_data_with_origin <- trip_data %>% 
+  inner_join(station_data %>% distinct(station_id, landmark), by = c("origin_id" = "station_id")) %>%
+  filter(landmark == "San Francisco")
+```
+
+### Observation 1: Popular Stations are near Transit Hubs
+
+I would expect that Subscribers are more likely to be commuters. The first observation is that, among subscribers, the most popular stations are near major transit hubs. The top ten origin and destination stations are shown below, and hubs such as Caltrain, the Ferry Building, and the Transbay Terminal are well-represented. The top four stations account for about a quarter of all trips.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+top_origin_stations <- trip_data_with_origin %>%
+  group_by(origin_station, subscription) %>%
+  summarize(trip_starts = n()) %>%
+  arrange(desc(trip_starts)) %>%
+  ungroup()
+top_destination_stations <- trip_data_with_origin %>%
+  group_by(destination_station, subscription) %>%
+  summarize(trip_ends = n()) %>%
+  arrange(desc(trip_ends)) %>%
+  ungroup()
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+tables <- list(
+  top_origin_stations %>% 
+    filter(subscription == "Subscriber") %>%
+    select(origin_station, trip_starts) %>%
+    rename(Station = origin_station, "Trip Starts" = trip_starts) %>%
+    head(10),
+  top_destination_stations %>% 
+    filter(subscription == "Subscriber") %>%
+    select(destination_station, trip_ends) %>%
+    rename(Station = destination_station, "Trip Ends" = trip_ends) %>%
+    head(10))
+```
+
+##### Subscriber Top Stations
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+kable(tables)
+```
+
+Taking a look at the same data for Customers, we see a very different pattern. First, the volume is much lower, and second, trips to and from the largest Subscriber hubs, Caltrain and the Transbay Terminal, are relatively less common. This indicates that a large number of those Subscribers are using the bikes as a leg of their commute.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+tables <- list(
+  top_origin_stations %>% 
+    filter(subscription == "Customer") %>%
+    select(origin_station, trip_starts) %>%
+    rename(Station = origin_station, "Trip Starts" = trip_starts) %>%
+    head(10),
+  top_destination_stations %>% 
+    filter(subscription == "Customer") %>%
+    select(destination_station, trip_ends) %>%
+    rename(Station = destination_station, "Trip Ends" = trip_ends) %>%
+    head(10))
+```
+
+##### Customer Top Stations
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+kable(tables)
+```
+
+### Observation 2: Most Trips are During Commute Hours
+
+The second observation is that most trips occur during commute hours. The heatmaps below show the relative number of trips per month made by Customers and Subscribers split by weekday.
+
+These plots reveal clear time-of-day usage patterns. Subscribers on weekdays make considerably more trips during the morning and afternoon commute hours suggesting that a majority of these people use the bikes to travel between their home, place of work, and/or a transit hub.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+time_summary <- trip_data_with_origin %>%
+  group_by(month, hour, subscription, weekday) %>%
+  summarize(trip_count = n(), total_duration = sum(actual_duration))
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+p1 <- ggplot(time_summary %>% filter(weekday == "Weekday", subscription == "Subscriber"), 
+       aes(month, hour, fill = trip_count)) +
+  geom_tile() + 
+  scale_fill_gradient(low = "white", high = "darkred") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text()) +
+  guides(fill = FALSE) +
+  labs(x = NULL, y = NULL, title = "Subscribers / Weekdays") +
+  scale_x_discrete(breaks = c("02", "05", "08", "11"), labels = c("Feb", "May", "Aug", "Nov")) +
+  scale_y_discrete(breaks = c("08", "17"), labels = c("8 am", "5 pm"))
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+p2 <- ggplot(time_summary %>% filter(weekday == "Weekday", subscription == "Customer"), 
+       aes(month, hour, fill = trip_count)) +
+  geom_tile() + 
+  scale_fill_gradient(low = "white", high = "darkblue") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text()) +
+  guides(fill = FALSE) +
+  labs(x = NULL, y = NULL, title = "Customers / Weekdays") +
+  scale_x_discrete(breaks = c("02", "05", "08", "11"), labels = c("Feb", "May", "Aug", "Nov")) +
+  scale_y_discrete(breaks = c("08", "17"), labels = c("8 am", "5 pm"))
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+p3 <- ggplot(time_summary %>% filter(weekday == "Weekend", subscription == "Subscriber"), 
+       aes(month, hour, fill = trip_count)) +
+  geom_tile() + 
+  scale_fill_gradient(low = "white", high = "darkgreen") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text()) +
+  guides(fill = FALSE) +
+  labs(x = NULL, y = NULL, title = "Subscribers / Weekends") +
+  scale_x_discrete(breaks = c("02", "05", "08", "11"), labels = c("Feb", "May", "Aug", "Nov")) +
+  scale_y_discrete(breaks = c("08", "17"), labels = c("8 am", "5 pm"))
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+p4 <- ggplot(time_summary %>% filter(weekday == "Weekend", subscription == "Customer"), 
+       aes(month, hour, fill = trip_count)) +
+  geom_tile() + 
+  scale_fill_gradient(low = "white", high = "darkorange") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text()) +
+  guides(fill = FALSE) +
+  labs(x = NULL, y = NULL, title = "Customers / Weekends") +
+  scale_x_discrete(breaks = c("02", "05", "08", "11"), labels = c("Feb", "May", "Aug", "Nov")) +
+  scale_y_discrete(breaks = c("08", "17"), labels = c("8 am", "5 pm"))
+```
+
+```{r commute-time-heatmap, warning=FALSE, message=FALSE, echo=FALSE}
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+```
+
+Moreover, this segment is by far the most active. Subscribers on weekdays contribute about 80% of the total number of trips, and this segment sees five to ten times more trips per day than any other. Zooming in further on this segment, we can see a clearer distribution of their trip times. 
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+n_days <- trip_data_with_origin %>%
+  group_by(weekday) %>%
+  summarize(n_days = n_distinct(date(time)))
+  
+trip_summary <- time_summary %>%
+  inner_join(n_days, by = "weekday") %>%
+  group_by(subscription, weekday, n_days) %>%
+  summarize(trip_count = sum(trip_count)) %>%
+  mutate(avg_per_day = trip_count/n_days)
+
+kable(trip_summary %>% rename(Subscription = subscription, `Day of Week` = weekday,
+                              `Number of Days` = n_days, `Count of Trips` = trip_count,
+                              `Avg. Trips Per Day` = avg_per_day))
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+weekday_subscriber_trips <- trip_data_with_origin %>% 
+  filter(weekday == "Weekday", subscription == "Subscriber")
+```
+
+```{r commute-hist-by-hour, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(weekday_subscriber_trips, aes(hour)) +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text()) +
+  labs(x = "Hour", y = "Count", title = "Weekday Subscriber Trips by Hour") +
+  geom_bar(fill = "grey")
+```
+
+### Fixing the Last Mile Problem
+
+In public transit systems, the [last mile problem](https://en.wikipedia.org/wiki/Last_mile_(transportation)) refers to how people get from a transit hub to their final destination. If a bike sharing system can successfully solve this problem for people, it becomes an integral part of the public transit system itself. While the analysis above is far from rigorous, I think it does show that the BABS has filled this gap for a lot of people. Most trips occur by Subscribers during commute hours on weekdays, and a significant number of these trips connect with major transit hubs.
