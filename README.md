@@ -21,3 +21,6 @@ The prepared data contains a lot of interesting information about how and when p
 
 ### Comparing Trip Times in the BABS to Google Maps Cycling Estimates
 By hitting the Google Maps Directions API, I can get cycling duration and distance estimates for all station pairs by passing the lat/long coordinates of the origin and destination. Once I have this information, I compare these estimates with the true trip duration. This produces some interesting insight into the accuracy of the Google Maps estimates.
+
+### Commuters in the BABS
+I was curious about how many commuters use the BABS, so I look at some patterns in usage that suggest commuters. In particular, I show that most trips connect with a transit hub and occur during morning/afternoon commute hours.
